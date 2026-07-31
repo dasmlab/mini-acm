@@ -1,0 +1,167 @@
+name: mini-acm CX Pipeline
+
+on:
+  push:
+    branches: ["main", "development"]
+  workflow_dispatch:
+
+env:
+  RUNNER_LABEL: self-hosted
+
+jobs:
+  prepare:
+    runs-on: [self-hosted]
+    outputs:
+      version_tag: ${{ steps.meta.outputs.version_tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: |
+          echo "version_tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-publish:
+    needs: prepare
+    runs-on: [self-hosted]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve GHCR token
+        run: |
+          set -euo pipefail
+          token=""
+          if [ -f "/home/dasm/gh_token" ]; then
+            token="$(tr -d '\n\r' < /home/dasm/gh_token)"
+          fi
+          if [ -z "${token}" ]; then
+            token="${{ secrets.DASMLAB_GHCR_PAT }}"
+          fi
+          if [ -z "${token}" ] && [ -f "/home/dasm/gh-pat" ]; then
+            # shellcheck disable=SC1091
+            source /home/dasm/gh-pat
+            token="${DASMLAB_GHCR_PAT:-${GH_TOKEN:-}}"
+          fi
+          if [ -z "${token}" ]; then
+            echo "ERROR: GHCR token not set"
+            exit 1
+          fi
+          echo "::add-mask::${token}"
+          echo "GHCR_TOKEN=${token}" >> "$GITHUB_ENV"
+
+      - name: Build image
+        env:
+          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          if command -v buildah >/dev/null 2>&1; then
+            buildah bud \
+              --build-arg BUILD_VERSION="${VERSION_TAG}" \
+              -f deployments/containers/Containerfile \
+              -t "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}" .
+          else
+            docker build \
+              --build-arg BUILD_VERSION="${VERSION_TAG}" \
+              -f deployments/containers/Containerfile \
+              -t "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}" .
+          fi
+
+      - name: Push image
+        env:
+          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+        run: |
+          echo "${GHCR_TOKEN}" | docker login ghcr.io -u dasmlab --password-stdin
+          if command -v buildah >/dev/null 2>&1 && ! docker image inspect "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}" >/dev/null 2>&1; then
+            buildah push "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
+          else
+            docker push "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
+          fi
+
+      - name: Smoke test
+        env:
+          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          cid="mini-acm-smoke-${GITHUB_SHA::8}"
+          docker rm -f "${cid}" 2>/dev/null || true
+          docker run -d --name "${cid}" -p 18080:8080 "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
+          trap 'docker rm -f "${cid}" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 40); do
+            if curl -fsS "http://127.0.0.1:18080/healthz" >/dev/null 2>&1; then
+              curl -fsS "http://127.0.0.1:18080/api/v1/version"
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "${cid}" || true
+          exit 1
+
+      - name: Ensure HAProxy CERT for FQDN
+        if: success()
+        run: |
+          set -euo pipefail
+          FQDN="mini-acm.apps.2026-prod-1.ocp.dasmlab.org"
+          if [ -f scripts/ci/ensure-prod-cert.sh ]; then
+            bash scripts/ci/ensure-prod-cert.sh "${FQDN}"
+          else
+            echo "WARN: ensure-prod-cert.sh missing — add CERTn on 10.20.1.10 manually"
+          fi
+
+  gitops-deploy:
+    needs: [prepare, build-publish]
+    if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GitOps sync
+        env:
+          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+        run: |
+          set -euo pipefail
+          DEPLOY_TOKEN=""
+          if [ -f "/home/dasm/gh_token" ]; then
+            DEPLOY_TOKEN="$(tr -d '\n\r' < /home/dasm/gh_token)"
+          fi
+          if [ -z "${DEPLOY_TOKEN}" ]; then
+            DEPLOY_TOKEN="${{ secrets.DASMLAB_GHCR_PAT }}"
+          fi
+          if [ -z "${DEPLOY_TOKEN}" ]; then
+            echo "ERROR: deploy token not set"
+            exit 1
+          fi
+
+          storage_class_for_cluster() {
+            case "$1" in
+              2026-prod-1|2026-prod-2-1) echo "lvms-vg1" ;;
+              *) echo "lvms-vg1" ;;
+            esac
+          }
+
+          git clone "https://x-access-token:${DEPLOY_TOKEN}@github.com/lmcdasm/dasmlab-live-cicd.git"
+          TARGET_CLUSTERS=("2026-prod-1")
+
+          for CLUSTER_NAME in "${TARGET_CLUSTERS[@]}"; do
+            STORAGE_CLASS="$(storage_class_for_cluster "${CLUSTER_NAME}")"
+            sed -e "s|__VERSION__|${VERSION_TAG}|g" -e "s|__STORAGE_CLASS__|${STORAGE_CLASS}|g" \
+              k8s_envelope/mini-acm_deploy-ocp.yaml > "generated-${CLUSTER_NAME}.yaml"
+            DEPLOY_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mini-acm/live"
+            ARCHIVE_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mini-acm/archived"
+            mkdir -p "${DEPLOY_DIR}" "${ARCHIVE_DIR}"
+            for old in "${DEPLOY_DIR}"/mini-acm-v*.yaml; do
+              [ -e "${old}" ] && mv "${old}" "${ARCHIVE_DIR}/"
+            done
+            cp "generated-${CLUSTER_NAME}.yaml" "${DEPLOY_DIR}/mini-acm-${VERSION_TAG}.yaml"
+          done
+
+          cd dasmlab-live-cicd
+          git config user.name "dasmlab-bot"
+          git config user.email "ci@dasmlab.org"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No GitOps changes"
+            exit 0
+          fi
+          git commit -m "Auto-publish mini-acm ${VERSION_TAG}"
+          git push

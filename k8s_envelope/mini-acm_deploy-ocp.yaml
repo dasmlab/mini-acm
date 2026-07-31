@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mini-acm-sa
+  namespace: mini-acm-system
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mini-acm
+  namespace: mini-acm-system
+  labels:
+    app: mini-acm
+    app.kubernetes.io/name: mini-acm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mini-acm
+  template:
+    metadata:
+      labels:
+        app: mini-acm
+    spec:
+      serviceAccountName: mini-acm-sa
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      imagePullSecrets:
+        - name: dasmlab-ghcr-pull
+      containers:
+        - name: mini-acm
+          image: ghcr.io/dasmlab/mini-acm:__VERSION__
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+          args:
+            - serve
+            - --listen
+            - ":8080"
+            - --data-dir
+            - /data
+          env:
+            - name: DATA_DIR
+              value: /data
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: BUILD_VERSION
+              value: "__VERSION__"
+          volumeMounts:
+            - name: mini-acm-data
+              mountPath: /data
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: mini-acm-data
+          persistentVolumeClaim:
+            claimName: mini-acm-data
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mini-acm-data
+  namespace: mini-acm-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: __STORAGE_CLASS__
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mini-acm
+  namespace: mini-acm-system
+spec:
+  selector:
+    app: mini-acm
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: mini-acm
+  namespace: mini-acm-system
+  labels:
+    app: mini-acm
+spec:
+  host: mini-acm.apps.2026-prod-1.ocp.dasmlab.org
+  to:
+    kind: Service
+    name: mini-acm
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

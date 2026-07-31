@@ -31,7 +31,13 @@ func newServeCmd() *cobra.Command {
 LAB / TEST / DEV ONLY.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if dataDir == "" {
+				dataDir = os.Getenv("DATA_DIR")
+			}
+			if dataDir == "" {
 				dataDir = "./data"
+			}
+			if addr == "" {
+				addr = os.Getenv("LISTEN_ADDR")
 			}
 			if addr == "" {
 				addr = ":8080"
