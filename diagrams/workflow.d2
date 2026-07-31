@@ -1,0 +1,14 @@
+direction: right
+
+prov: "RHEL provisioner\nlibvirt · DNS · HAProxy\nocp-lab CLI"
+hub: "Phase 1 Hub SNO\nAgent-based Installer\nRHCOS + OCP"
+acm: "MCE + ACM\non hub"
+vms: "Phase 2\n3× libvirt VMs\nsingle network"
+agents: "InfraEnv Agents\nClusterDeployment\nAgentClusterInstall"
+managed: "Compact OCP\n3 masters / 0 workers\nManagedCluster"
+
+prov -> hub
+hub -> acm
+acm -> vms
+vms -> agents
+agents -> managed

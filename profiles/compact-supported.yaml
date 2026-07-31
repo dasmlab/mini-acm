@@ -1,0 +1,6 @@
+# Documented compact control-plane minimum.
+profile: supported
+cpu: 4
+memoryMiB: 16384
+diskGiB: 120
+unsupported: false

@@ -1,0 +1,32 @@
+# Example ACM management hub (SNO via local Agent-based Installer).
+# Secrets: set PULL_SECRET_FILE / SSH_PUBLIC_KEY_FILE in .env — never here.
+apiVersion: mini-acm.dasmlab.org/v1alpha1
+kind: Hub
+metadata:
+  name: hub
+  notes: LAB/TEST/DEV only — RHCOS via Agent ISO, not RHEL+OCP
+hub:
+  mode: local-agent   # local-agent | existing-kubeconfig | demo-redhat (stub)
+  baseDomain: lab.example.net
+  version: "4.18"
+  profile: hub-supported   # hub-supported (8/24/200) | hub-lab (8/16/160)
+  workDir: ./data/hub-hub
+  installACM: true
+provider:
+  type: libvirt
+  network: ocp-lab
+  storagePool: default
+network:
+  machineCIDR: 192.168.130.0/24
+  gateway: 192.168.130.1
+  apiVIP: 192.168.130.10
+  ingressVIP: 192.168.130.11
+  dhcpStart: 192.168.130.100
+  dhcpEnd: 192.168.130.150
+  dns: 192.168.130.1
+node:
+  hostname: hub-sno
+  role: master
+  ip: 192.168.130.20
+  mac: "52:54:00:13:00:20"
+  # cpu / memoryMiB / diskGiB filled from profile if omitted

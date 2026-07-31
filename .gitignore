@@ -1,0 +1,26 @@
+# Build artifacts
+/bin/
+*.exe
+*.test
+*.out
+
+# Generated lab data (ISOs, auth, haproxy, etc.)
+/data/
+
+# Local kubeconfigs — never commit
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Secrets
+.env
+.env.*
+!.env.example
+pull-secret.json
+**/pull-secret*.json
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

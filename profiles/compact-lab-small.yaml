@@ -1,0 +1,6 @@
+# Lab squeeze — Assisted validation may fail; operators may degrade. Unsupported.
+profile: lab-small
+cpu: 4
+memoryMiB: 12288
+diskGiB: 120
+unsupported: true

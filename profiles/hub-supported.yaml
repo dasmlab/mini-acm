@@ -1,0 +1,6 @@
+# Hub SNO sized for ACM (supported lab target).
+profile: hub-supported
+cpu: 8
+memoryMiB: 24576
+diskGiB: 200
+unsupported: false

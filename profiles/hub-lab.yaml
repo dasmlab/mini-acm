@@ -1,0 +1,6 @@
+# Tighter hub — may install; ACM may pressure memory. Unsupported.
+profile: hub-lab
+cpu: 8
+memoryMiB: 16384
+diskGiB: 160
+unsupported: true

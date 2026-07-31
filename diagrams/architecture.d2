@@ -1,0 +1,12 @@
+direction: down
+
+cli: "mini-acm CLI\nhub | cluster"
+iface: "provider.Provider\nCreateNode AttachISO Start…"
+libvirt: "providers/libvirt"
+future: "vmware · proxmox\nazure · redfish\ndemo.redhat (stub)"
+acm: "ACM / MCE on hub\n(owns OCP lifecycle)"
+
+cli -> iface
+iface -> libvirt
+iface -> future
+cli -> acm: "apply CRs / wait Agents"

@@ -1,0 +1,30 @@
+# Example ACM-managed compact 3-node cluster (schedulable masters, 0 workers).
+# Apply generated acm-resources.yaml on the hub after pull-secret Secret exists.
+apiVersion: mini-acm.dasmlab.org/v1alpha1
+kind: ManagedCluster
+metadata:
+  name: dev01
+  notes: LAB/TEST/DEV — genuine ACM Agent / InfraEnv lifecycle on libvirt VMs
+cluster:
+  name: dev01
+  baseDomain: lab.example.net
+  version: "4.18"
+  profile: supported   # supported (4/16/120) | lab-small (4/12/120, unsupported)
+provider:
+  type: libvirt
+  network: ocp-lab
+  storagePool: default
+network:
+  machineCIDR: 192.168.130.0/24
+  gateway: 192.168.130.1
+  apiVIP: 192.168.130.10
+  ingressVIP: 192.168.130.11
+  dhcpStart: 192.168.130.100
+  dhcpEnd: 192.168.130.150
+  dns: 192.168.130.1
+nodes:
+  count: 3
+  role: master
+  ipBase: 192.168.130.21
+  macPrefix: "52:54:00:13:00"
+  # cpu / memoryMiB / diskGiB from profile if omitted
