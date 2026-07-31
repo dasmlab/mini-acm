@@ -25,12 +25,13 @@ func newRootCmd() *cobra.Command {
 		Long: banner + `
 Typical flow:
 
-  1. cp .env.example .env   # PULL_SECRET_FILE, SSH key
-  2. cp config/hub.example.yaml hub.yaml
-  3. mini-acm hub create --config hub.yaml --manual
-  4. # after hub is up + ACM installed
-  5. cp config/cluster.example.yaml cluster.yaml
-  6. mini-acm cluster create --config cluster.yaml --manual
+  1. mini-acm serve                     # UI: MockUp → Topology → Wizard
+  2. Derive YAML from MockUp, or:
+  3. cp .env.example .env + hub/cluster YAML
+  4. mini-acm hub create --config hub.yaml --manual
+  5. mini-acm hub install-acm
+  6. mini-acm cluster create --manual
+  7. mini-acm cluster attach-iso --iso discovery.iso
 
 Provider layer presents bootable machines. ACM owns OCP install lifecycle.
 
@@ -48,6 +49,7 @@ Auth for hub ACM ops:
 
 	root.AddCommand(newHubCmd(gf))
 	root.AddCommand(newClusterCmd(gf))
+	root.AddCommand(newServeCmd())
 
 	return root
 }

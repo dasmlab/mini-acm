@@ -17,10 +17,24 @@ help: ## Show this help
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: web
+web: ## Build Vue UI into cmd/.../static for go:embed
+	cd web && npm install && npm run build
+	rm -rf cmd/$(BINARY_NAME)/static/*
+	cp -a web/dist/. cmd/$(BINARY_NAME)/static/
+	@touch cmd/$(BINARY_NAME)/static/.gitkeep
+
 .PHONY: build
 build: ## Build the CLI into ./bin
 	mkdir -p $(BIN_DIR)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+
+.PHONY: build-all
+build-all: web build ## Build UI then Go binary
+
+.PHONY: serve
+serve: build ## Run UI+API on :8080
+	./$(BIN_DIR)/$(BINARY_NAME) serve --listen :8080 --data-dir ./data
 
 .PHONY: test
 test: ## Run go vet + go test

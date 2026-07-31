@@ -4,8 +4,14 @@
 *.test
 *.out
 
-# Generated lab data (ISOs, auth, haproxy, etc.)
+# Generated lab data (ISOs, auth, haproxy, MockUps, etc.)
 /data/
+
+# Embedded UI build output is committed as placeholder; rebuilt by make web
+cmd/mini-acm/static/*
+!cmd/mini-acm/static/.gitkeep
+web/node_modules/
+web/dist/
 
 # Local kubeconfigs — never commit
 kubeconfig

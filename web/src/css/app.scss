@@ -1,0 +1,37 @@
+body {
+  margin: 0;
+}
+
+.q-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.q-page.wide {
+  max-width: 1400px;
+}
+
+.warning-banner {
+  background: repeating-linear-gradient(
+    45deg,
+    #1565c0,
+    #1565c0 12px,
+    #0d47a1 12px,
+    #0d47a1 24px
+  );
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.action-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.action-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(21, 101, 192, 0.16);
+}
+
+.node-hub { fill: #1a237e; }
+.node-acm { fill: #00838f; }
+.node-cluster { fill: #1565c0; }

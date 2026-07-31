@@ -13,7 +13,7 @@
 >
 > ================================================================================
 
-**Version: 0.1.0 (MVP)** · [Workflow](docs/WORKFLOW.md) · [MVP](docs/MVP.md) · [Roadmap](docs/ROADMAP.md) · [Diagram](diagrams/workflow.d2)
+**Version: 0.1.0 (MVP)** · [**Test flow**](docs/TEST-FLOW.md) · [Workflow](docs/WORKFLOW.md) · [MVP](docs/MVP.md) · [Roadmap](docs/ROADMAP.md) · [Diagram](diagrams/workflow.d2)
 
 ## What this is
 
@@ -31,7 +31,7 @@ ocp-lab create path (MVP commands)
   mini-acm cluster create  → 3 VMs + ACM CR / net assets
 ```
 
-## Quick start
+## Quick start (CLI)
 
 ```bash
 cp .env.example .env          # set PULL_SECRET_FILE + SSH_PUBLIC_KEY_FILE
@@ -40,20 +40,24 @@ cp config/cluster.example.yaml cluster.yaml
 
 make build
 ./bin/mini-acm --manual hub create --config hub.yaml --skip-wait
-# follow printed openshift-install / virsh steps, then:
-./bin/mini-acm hub install-acm --config hub.yaml --manual
-
-./bin/mini-acm --manual cluster create --config cluster.yaml
-# apply data/cluster-*/acm-resources.yaml on hub, download discovery ISO, then:
-./bin/mini-acm cluster attach-iso --config cluster.yaml --iso ./discovery.iso --manual
 ```
 
-Dry-run without touching libvirt:
+## Quick start (UI — MockUp topology)
+
+Same pattern as etcd-synthetic-load / interview-me: Vue+Quasar SPA embedded in `serve`.
 
 ```bash
-make hub-dry
-make cluster-dry
+make build-all          # npm build UI → embed → go binary
+./bin/mini-acm serve --listen :8080 --data-dir ./data
+# open http://localhost:8080
 ```
+
+Flow in the UI:
+
+1. **MockUps** — create a top-level lab rack (Target analogue)
+2. **Topology** — drag MGMT-CLUSTER / ACM / DEPLOYMENT-CLUSTER nodes; click to edit (CPU/RAM/disk sliders)
+3. **Wizard** — capture MVP-gap params (pull-secret path, ClusterImageSet, discovery ISO, …)
+4. **Derive** — write `data/mockups/<id>/out/hub.yaml` + `cluster-*.yaml` for the CLI
 
 ### Container
 
@@ -86,9 +90,12 @@ Do not default to 8 GiB nodes — that turns the exercise into operator failure 
 ## Repository layout
 
 ```text
-cmd/mini-acm/          cobra CLI
+cmd/mini-acm/          cobra CLI (+ embedded static/)
+web/                   Vue 3 + Quasar UI (MockUps / Topology / Wizard)
 internal/
   config/              hub + cluster YAML
+  mockup/              MockUp store (Target analogue)
+  api/                 chi /api/v1 + SPA static
   provider/            Provider interface + libvirt
   hub/                 Agent-based SNO bootstrap
   cluster/             compact cluster orchestration
@@ -123,6 +130,8 @@ MVP implements **libvirt**. Register more under `internal/provider/<name>`.
 | Target | What |
 |--------|------|
 | `make build` | `./bin/mini-acm` |
+| `make build-all` | Vue UI embed + Go binary |
+| `make serve` | UI+API on :8080 |
 | `make test` | `go vet` + `go test` |
 | `make hub-dry` / `cluster-dry` | Manual/dry-run example configs |
 | `make image` | UBI9 image via podman |

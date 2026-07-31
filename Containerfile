@@ -12,6 +12,8 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
+# UI must be pre-built into cmd/mini-acm/static (make web) before image build,
+# or use a multi-stage node build — keep CLI image lean for MVP.
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o /build/mini-acm ./cmd/mini-acm
@@ -42,4 +44,4 @@ WORKDIR /data
 VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/local/bin/mini-acm"]
-CMD ["--help"]
+CMD ["serve", "--listen", ":8080", "--data-dir", "/data"]
