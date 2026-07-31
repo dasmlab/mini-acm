@@ -46,6 +46,9 @@ make build
 
 Same pattern as etcd-synthetic-load / interview-me: Vue+Quasar SPA embedded in `serve`.
 
+**Prod (2026-prod-1):** https://mini-acm.apps.2026-prod-1.ocp.dasmlab.org  
+(Argo app `mini-acm` → `mini-acm-system`; GHCR `ghcr.io/dasmlab/mini-acm`; HAProxy `CERT53`)
+
 ```bash
 make build-all          # npm build UI → embed → go binary
 ./bin/mini-acm serve --listen :8080 --data-dir ./data
