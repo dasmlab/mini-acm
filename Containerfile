@@ -36,7 +36,7 @@ LABEL org.opencontainers.image.title="mini-acm" \
 
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
 
-RUN microdnf install -y tar gzip ca-certificates curl && \
+RUN microdnf install -y tar gzip ca-certificates && \
     curl -fsSL "${OC_CLI_URL}" -o /tmp/oc.tar.gz && \
     tar -xzf /tmp/oc.tar.gz -C /usr/local/bin oc && \
     rm -f /tmp/oc.tar.gz && \
