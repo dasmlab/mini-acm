@@ -137,6 +137,15 @@ func defaultIdentityHint() string {
 	if v := os.Getenv("SSH_IDENTITY_FILE"); v != "" {
 		return v
 	}
+	for _, p := range []string{
+		"/var/run/inventory-ssh/id_ecdsa",
+		"/var/run/inventory-ssh/id_ed25519",
+		"/var/run/inventory-ssh/id_rsa",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "~/.ssh/id_ecdsa"
