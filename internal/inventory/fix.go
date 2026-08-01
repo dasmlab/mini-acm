@@ -27,14 +27,14 @@ type FixReq struct {
 
 // FixResult is the outcome of a remediating SSH session.
 type FixResult struct {
-	OK       bool              `json:"ok"`
-	Message  string            `json:"message"`
-	Log      []string          `json:"log,omitempty"`
-	Actions  []string          `json:"actions"`
-	Probe    *ProbeResult      `json:"probe,omitempty"` // re-probe after fix
-	Host     *MachineHost      `json:"host,omitempty"`
-	Facts    map[string]string `json:"facts,omitempty"`
-	CheckedAt string           `json:"checkedAt"`
+	OK        bool              `json:"ok"`
+	Message   string            `json:"message"`
+	Log       []string          `json:"log,omitempty"`
+	Actions   []string          `json:"actions"`
+	Probe     *ProbeResult      `json:"probe,omitempty"` // re-probe after fix
+	Host      *MachineHost      `json:"host,omitempty"`
+	Facts     map[string]string `json:"facts,omitempty"`
+	CheckedAt string            `json:"checkedAt"`
 }
 
 // Fix installs/starts missing pieces on the MACHINE-HOST (libvirt, podman, …).

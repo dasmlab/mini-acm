@@ -5,18 +5,18 @@ import "fmt"
 // Genre / Style identify which product offering a MockUp belongs to.
 // Resource kind stays "MockUp"; genre is the product family, style is the template.
 const (
-	GenreClusterManagement       = "cluster-management"
-	GenreApplicationDevelopment  = "application-development"
-	GenreInfrastructure          = "infrastructure"
-	GenreContentManagement       = "content-management"
+	GenreClusterManagement      = "cluster-management"
+	GenreApplicationDevelopment = "application-development"
+	GenreInfrastructure         = "infrastructure"
+	GenreContentManagement      = "content-management"
 	// GenreContentDelivery is a legacy alias id kept for existing mockups / docs.
 	GenreContentDelivery = GenreContentManagement
 
-	StyleACMMultiCluster = "acm-multi-cluster"
-	StyleSingleSNOOCP        = "single-sno-ocp"
-	StyleWindowsUI           = "windows-ui"
-	StyleWebFullStack        = "web-full-stack"
-	StyleInfraNodeNetwork    = "infra-node-network-payload"
+	StyleACMMultiCluster      = "acm-multi-cluster"
+	StyleSingleSNOOCP         = "single-sno-ocp"
+	StyleWindowsUI            = "windows-ui"
+	StyleWebFullStack         = "web-full-stack"
+	StyleInfraNodeNetwork     = "infra-node-network-payload"
 	StyleSelfServePersonalCDN = "self-serve-cloud-personal-cdn"
 	StyleSurfingCdnR2         = "surfing-cdn-r2" // golden implementation example of Self-Serve Personal CDN
 )
@@ -32,15 +32,15 @@ type RelationRule struct {
 
 // StyleDef is a creatable (or stub) template within a genre.
 type StyleDef struct {
-	ID           string         `json:"id"`
-	Genre        string         `json:"genre"`
-	Label        string         `json:"label"`
-	Description  string         `json:"description"`
-	Available    bool           `json:"available"` // false = catalog stub, create rejected
-	ObjectTypes  []string       `json:"objectTypes"`
-	Views        []string       `json:"views,omitempty"`
-	Relations    []RelationRule `json:"relations,omitempty"`
-	DefaultSeed  string         `json:"defaultSeed,omitempty"` // human hint
+	ID          string         `json:"id"`
+	Genre       string         `json:"genre"`
+	Label       string         `json:"label"`
+	Description string         `json:"description"`
+	Available   bool           `json:"available"` // false = catalog stub, create rejected
+	ObjectTypes []string       `json:"objectTypes"`
+	Views       []string       `json:"views,omitempty"`
+	Relations   []RelationRule `json:"relations,omitempty"`
+	DefaultSeed string         `json:"defaultSeed,omitempty"` // human hint
 }
 
 // GenreDef groups styles.
@@ -63,9 +63,9 @@ func Catalog() CatalogResponse {
 	styles := []StyleDef{
 		{
 			ID: StyleSingleSNOOCP, Genre: GenreClusterManagement,
-			Label: "Single SNO OCP",
+			Label:       "Single SNO OCP",
 			Description: "Bring up one SNO (OCP-MGMT) via the adapter (libvirt today). Same MACHINE-HOST → vHost path as the mgmt half of ACM Multi-Cluster — stop before ACM / spokes.",
-			Available: true,
+			Available:   true,
 			ObjectTypes: []string{
 				"MachineHost", "Adapter", "VHost", "Gateway", "OCP-MGMT", "Appliance",
 			},
@@ -80,13 +80,13 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleACMMultiCluster, Genre: GenreClusterManagement,
-			Label: "ACM Multi-Cluster",
+			Label:       "ACM Multi-Cluster",
 			Description: "Composable: Single SNO (OCP-MGMT) + ACM payload + N× OCP-DEPLOY. Mgmt hosts ACM; managed deployments on the lab rack.",
-			Available: true,
+			Available:   true,
 			ObjectTypes: []string{
 				"MachineHost", "Adapter", "VHost", "Gateway", "OCP-MGMT", "ACM", "OCP-DEPLOY", "Appliance",
 			},
-			Views: []string{"all", "infra", "network", "cluster", "app"},
+			Views:       []string{"all", "infra", "network", "cluster", "app"},
 			DefaultSeed: "lab rack with OCP-MGMT + ACM + 2 OCP-DEPLOY clusters",
 			Relations: []RelationRule{
 				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
@@ -100,13 +100,13 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleWindowsUI, Genre: GenreApplicationDevelopment,
-			Label: "Windows UI MockUp",
+			Label:       "Windows UI MockUp",
 			Description: "Client app SDLC canvas: OS → runtime (.NET/WPF, …) → UI surfaces → data/devices/services. Inspired by apps like running-translate.",
-			Available: false,
+			Available:   false,
 			ObjectTypes: []string{
 				"RunningOS", "ClientRuntime", "Window", "Form", "Control", "DataInput", "Device", "DataOutput", "ServiceCall",
 			},
-			Views: []string{"all", "runtime", "ui", "dataflow"},
+			Views:       []string{"all", "runtime", "ui", "dataflow"},
 			DefaultSeed: "stub — empty Windows UI canvas (not seeded yet)",
 			Relations: []RelationRule{
 				{From: "ClientRuntime", Rel: "runsOn", To: "RunningOS", Cardinality: "1..1"},
@@ -120,13 +120,13 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleWebFullStack, Genre: GenreApplicationDevelopment,
-			Label: "Web Full-Stack Application",
+			Label:       "Web Full-Stack Application",
 			Description: "Routes, FE/BE components, APIs, data stores — bread-and-butter app MockUps.",
-			Available: false,
+			Available:   false,
 			ObjectTypes: []string{
 				"Route", "Frontend", "Backend", "API", "DataStore", "Auth", "ExternalService",
 			},
-			Views: []string{"all", "frontend", "backend", "data"},
+			Views:       []string{"all", "frontend", "backend", "data"},
 			DefaultSeed: "stub — empty web stack canvas (not seeded yet)",
 			Relations: []RelationRule{
 				{From: "Frontend", Rel: "calls", To: "API", Cardinality: "0..*"},
@@ -137,9 +137,9 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleInfraNodeNetwork, Genre: GenreInfrastructure,
-			Label: "Infra · Node · Network · Payload",
+			Label:       "Infra · Node · Network · Payload",
 			Description: "Standalone infrastructure MockUp (hosts, nets, payloads) without ACM governance.",
-			Available: false,
+			Available:   false,
 			ObjectTypes: []string{"MachineHost", "Adapter", "VHost", "Network", "Appliance", "Payload"},
 			Views:       []string{"all", "infra", "network", "payload"},
 			DefaultSeed: "stub — infra-focused canvas (not seeded yet)",
@@ -151,15 +151,15 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleSelfServePersonalCDN, Genre: GenreContentManagement,
-			Label: "Self-Serve Cloud Personal CDN",
+			Label:       "Self-Serve Cloud Personal CDN",
 			Description: "Customer-held keys + pass-through cloud bill (~$1 service for index/site-CDN/migrate). Portal → OAuth2/SSO to CF/Azure/GCP → BYO bucket backend → Edge CDN → catalog/index (cdn-mgr). Surfing is the golden live example. cheapcloud profiles free-tier burn; mock-me templates this for cdn-mgr later.",
-			Available: false,
+			Available:   false,
 			ObjectTypes: []string{
 				"CustomerPortal", "IdentitySSO", "KeyVault", "Realm", "Backend",
 				"ObjectStore", "EdgeCDN", "SiteCDN", "WebHost", "CatalogIndex",
 				"Collection", "Asset", "CostProfile", "PublishPipeline",
 			},
-			Views: []string{"all", "portal", "identity", "storage", "edge", "hosting", "cost"},
+			Views:       []string{"all", "portal", "identity", "storage", "edge", "hosting", "cost"},
 			DefaultSeed: "stub — portal+SSO → BYO R2 → CF edge → index; web host on DC OCP",
 			Relations: []RelationRule{
 				{From: "CustomerPortal", Rel: "authenticatesVia", To: "IdentitySSO", Cardinality: "1..1", Notes: "OAuth2 / OIDC to CF, Azure, Google"},
@@ -182,9 +182,9 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: StyleSurfingCdnR2, Genre: GenreContentManagement,
-			Label: "Surfing (golden Personal CDN example)",
+			Label:       "Surfing (golden Personal CDN example)",
 			Description: "Live implementation slice of Self-Serve Cloud Personal CDN: dasmlab_home Surfing UX (WebHost on 2026-prod-1) → surfing-service publish → R2 dasmlab-surfing → CF pub-*.r2.dev. Keep as before/after golden client while dasmlab-cdn-mgr grows.",
-			Available: false,
+			Available:   false,
 			ObjectTypes: []string{
 				"WebHost", "OriginApp", "ObjectStore", "EdgeCDN", "SiteCDN",
 				"Collection", "Asset", "PublishPipeline", "CostProfile", "KeyVault",
@@ -209,22 +209,22 @@ func Catalog() CatalogResponse {
 		{
 			ID: GenreClusterManagement, Label: "Cluster Management",
 			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or mock-me (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
-			Styles: []string{StyleSingleSNOOCP, StyleACMMultiCluster},
+			Styles:      []string{StyleSingleSNOOCP, StyleACMMultiCluster},
 		},
 		{
 			ID: GenreApplicationDevelopment, Label: "Application Development",
 			Description: "Client and full-stack application design MockUps (UI, runtime, dataflow).",
-			Styles: []string{StyleWindowsUI, StyleWebFullStack},
+			Styles:      []string{StyleWindowsUI, StyleWebFullStack},
 		},
 		{
 			ID: GenreInfrastructure, Label: "Infrastructure",
 			Description: "Hosts, networks, and payloads without a cluster-management control plane.",
-			Styles: []string{StyleInfraNodeNetwork},
+			Styles:      []string{StyleInfraNodeNetwork},
 		},
 		{
 			ID: GenreContentManagement, Label: "Content Management",
 			Description: "Self-serve personal CDN / media realms (cdn-mgr). Golden example: Surfing. Portal+SSO+BYO keys; cheapcloud watches free-tier; mock-me templates for cdn-mgr customers (~$1 index fee, pass-through cloud bill).",
-			Styles: []string{StyleSelfServePersonalCDN, StyleSurfingCdnR2},
+			Styles:      []string{StyleSelfServePersonalCDN, StyleSurfingCdnR2},
 		},
 	}
 

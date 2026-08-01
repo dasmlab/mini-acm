@@ -17,17 +17,17 @@ type ValidationStep struct {
 	Name    string   `json:"name"`
 	Icon    string   `json:"icon"`
 	Relates []string `json:"relates,omitempty"` // human relation edges checked
-	Status  string   `json:"status"`           // ok | warn | error
+	Status  string   `json:"status"`            // ok | warn | error
 	Issue   string   `json:"issue,omitempty"`
 }
 
 // ValidationResult is the full pass over a MockUp topology.
 type ValidationResult struct {
-	OK       bool              `json:"ok"`
-	Mode     string            `json:"mode"`
-	Issues   []ValidationIssue `json:"issues"`
-	Steps    []ValidationStep  `json:"steps,omitempty"`
-	Summary  string            `json:"summary"`
+	OK      bool              `json:"ok"`
+	Mode    string            `json:"mode"`
+	Issues  []ValidationIssue `json:"issues"`
+	Steps   []ValidationStep  `json:"steps,omitempty"`
+	Summary string            `json:"summary"`
 	// PromoteSupported is always false for now — free-form → guided is a later feature.
 	PromoteSupported bool `json:"promoteSupported"`
 }

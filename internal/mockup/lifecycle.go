@@ -10,6 +10,8 @@ import (
 // PhaseRank orders lifecycle phases for upgrade/downgrade guards.
 func PhaseRank(p Phase) int {
 	switch p {
+	case PhaseFailed:
+		return -10 // terminal until Clean
 	case PhaseCreated:
 		return 10
 	case PhaseConfigured, PhaseHubReady:
@@ -25,6 +27,46 @@ func PhaseRank(p Phase) int {
 	}
 }
 
+// IsLocked reports phases where Validate/Derive/Deploy must not run until Clean/Delete.
+func IsLocked(p Phase) bool {
+	return p == PhaseFailed || p == PhaseDeploying
+}
+
+// ErrLocked is returned when a MockUp is failed/deploying and needs Clean or Delete.
+var ErrLocked = fmt.Errorf("MockUp is locked after a failed or in-flight deploy — Clean or Delete before continuing")
+
+// RequireUnlocked returns ErrLocked when phase blocks workflow actions.
+func (m *MockUp) RequireUnlocked() error {
+	if m != nil && IsLocked(m.Status.Phase) {
+		return fmt.Errorf("%w (phase=%s)", ErrLocked, m.Status.Phase)
+	}
+	return nil
+}
+
+// CleanFailed resets a failed (or stuck deploying) MockUp so Validate/Deploy can run again.
+// Removes deploy-job.json; keeps derived YAML and topology. Does not touch remote host files.
+func (s *Store) CleanFailed(id string) (*MockUp, error) {
+	m, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if m.Status.Phase != PhaseFailed && m.Status.Phase != PhaseDeploying {
+		return nil, fmt.Errorf("Clean only applies to failed/deploying MockUps (phase=%s)", m.Status.Phase)
+	}
+	_ = os.Remove(filepath.Join(s.Dir(id), "deploy-job.json"))
+	if s.HasDerivedArtifacts(id) {
+		m.Status.Phase = PhaseValidated
+		m.Status.Message = "Cleaned after deploy failure — Validate/Deploy unlocked (remote host work left in place)"
+	} else {
+		m.Status.Phase = PhaseConfigured
+		m.Status.Message = "Cleaned after deploy failure — Derive then Validate/Deploy"
+	}
+	if err := s.Save(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // HasDerivedArtifacts reports whether Derive has written the hub plan YAML.
 func (s *Store) HasDerivedArtifacts(id string) bool {
 	hub := filepath.Join(s.Dir(id), "out", "hub.yaml")
@@ -38,6 +80,9 @@ func (s *Store) ValidatePlan(id string) (ValidationResult, *MockUp, error) {
 	m, err := s.Get(id)
 	if err != nil {
 		return ValidationResult{}, nil, err
+	}
+	if err := m.RequireUnlocked(); err != nil {
+		return ValidationResult{}, m, err
 	}
 
 	if !s.HasDerivedArtifacts(id) {

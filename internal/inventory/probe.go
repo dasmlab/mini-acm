@@ -138,6 +138,12 @@ else
 fi
 if test -S /var/run/libvirt/libvirt-sock; then S=yes; else S=no; fi
 if command -v podman >/dev/null 2>&1; then P=$(podman --version 2>/dev/null); else P=missing; fi
+if command -v openshift-install >/dev/null 2>&1; then
+  OI=$(openshift-install version 2>/dev/null | sed -n '1p' | tr -d '\n')
+  [ -n "$OI" ] || OI=present
+else
+  OI=missing
+fi
 printf 'hostname=%s\n' "$HN"
 printf 'os=%s\n' "$OS"
 printf 'arch=%s\n' "$ARCH"
@@ -145,6 +151,7 @@ printf 'libvirtd=%s\n' "$LV"
 printf 'virsh=%s\n' "$V"
 printf 'socket=%s\n' "$S"
 printf 'podman=%s\n' "$P"
+printf 'openshiftInstall=%s\n' "$OI"
 printf 'PROBE_OK=1\n'
 `
 
@@ -152,6 +159,7 @@ printf 'PROBE_OK=1\n'
 	virshOK := false
 	sockOK := false
 	podmanOK := false
+	installerOK := false
 	out, err := sshOutputRetry(client, probeScript, 3)
 	if err != nil {
 		res.Facts["libvirtProbeError"] = truncate(err.Error()+" "+out, 200)
@@ -192,6 +200,12 @@ printf 'PROBE_OK=1\n'
 					podmanOK = true
 					res.PodmanReady = true
 				}
+			case "openshiftInstall":
+				res.Facts["openshiftInstall"] = val
+				if val != "" && val != "missing" {
+					installerOK = true
+					res.InstallerReady = true
+				}
 			}
 		}
 	}
@@ -201,14 +215,14 @@ printf 'PROBE_OK=1\n'
 	if !virshOK {
 		res.Issues = append(res.Issues, ProbeIssue{
 			ID: "virsh-missing", Severity: "error",
-			Message:    "virsh / libvirt client packages missing — install libvirt stack on target",
+			Message:   "virsh / libvirt client packages missing — install libvirt stack on target",
 			Fixable:   true,
 			FixAction: FixInstallLibvirt,
 		})
 	} else if !libvirtActive && !sockOK {
 		res.Issues = append(res.Issues, ProbeIssue{
 			ID: "libvirtd-inactive", Severity: "error",
-			Message:    "libvirtd is not active — enable and start the service",
+			Message:   "libvirtd is not active — enable and start the service",
 			Fixable:   true,
 			FixAction: FixStartLibvirtd,
 		})
@@ -217,21 +231,36 @@ printf 'PROBE_OK=1\n'
 	if !podmanOK {
 		res.Issues = append(res.Issues, ProbeIssue{
 			ID: "podman-missing", Severity: "warn",
-			Message:    "podman missing — install for EE/runner agent container (deploy path)",
+			Message:   "podman missing — required for Deploy EE/runner (Fix this → install-podman)",
 			Fixable:   true,
 			FixAction: FixInstallPodman,
 		})
 	}
 
-	// Green only when libvirt is ready. Podman is recommended but not required for "ready".
+	if !installerOK {
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "openshift-install-missing", Severity: "warn",
+			Message: "openshift-install missing — required for OCP-MGMT Deploy (install client on MACHINE-HOST before Deploy)",
+			Fixable: false,
+		})
+	}
+
+	// Green when libvirt is ready. Podman + openshift-install are Deploy EE prereqs (warned above).
 	res.Orchestration = res.AuthOK && res.LibvirtReady
 	res.OK = res.Orchestration
 
 	switch {
 	case res.AuthOK && res.LibvirtReady:
 		msg := fmt.Sprintf("SSH OK to %s — libvirt ready; can orchestrate against a plan.", h.Endpoint())
-		if !podmanOK {
-			msg += " (podman optional for EE agent — Fix this to install)"
+		if !podmanOK || !installerOK {
+			missing := []string{}
+			if !podmanOK {
+				missing = append(missing, "podman")
+			}
+			if !installerOK {
+				missing = append(missing, "openshift-install")
+			}
+			msg += " Deploy EE needs: " + strings.Join(missing, ", ") + "."
 		}
 		res.Message = msg
 	case res.AuthOK && !res.LibvirtReady:

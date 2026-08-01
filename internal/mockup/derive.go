@@ -14,6 +14,9 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if m.Status.Phase == PhaseFailed {
+		return nil, fmt.Errorf("%w (phase=%s)", ErrLocked, m.Status.Phase)
+	}
 	outDir := filepath.Join(s.Dir(id), "out")
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, err
@@ -64,7 +67,7 @@ func gatewayDoc(m *MockUp) map[string]any {
 			"name":  g.Hostname,
 			"notes": g.Notes,
 			"labels": map[string]any{
-				"mock-me.dasmlab.org/role": "edge-router",
+				"mock-me.dasmlab.org/role":  "edge-router",
 				"mock-me.dasmlab.org/image": g.Image,
 			},
 		},
@@ -80,7 +83,7 @@ func gatewayDoc(m *MockUp) map[string]any {
 				"network": g.LANNetwork, "cidr": g.LANCIDR, "ip": g.LANIP,
 			},
 			"nat": g.NAT, "firewall": g.Firewall,
-			"infraHost": m.Spec.InfraHost.Hostname,
+			"infraHost":      m.Spec.InfraHost.Hostname,
 			"hostsLabGuests": true,
 		},
 	}
@@ -96,7 +99,7 @@ func infraHostDoc(m *MockUp) map[string]any {
 			"notes": h.Notes,
 			"labels": map[string]any{
 				"mock-me.dasmlab.org/role": "machine-host",
-				"acm.reference":             "BareMetalHost-analogue",
+				"acm.reference":            "BareMetalHost-analogue",
 			},
 		},
 		"spec": map[string]any{
@@ -111,11 +114,11 @@ func infraHostDoc(m *MockUp) map[string]any {
 				"networkName": h.NetworkName, "storagePool": h.StoragePool,
 				"podman": h.Podman,
 			},
-			"sshHost":       h.SSHHost,
-			"sshUser":       h.SSHUser,
-			"inventoryRef":  h.InventoryRef,
-			"acmReference":  h.ACMReference,
-			"hostsGuests":   true,
+			"sshHost":      h.SSHHost,
+			"sshUser":      h.SSHUser,
+			"inventoryRef": h.InventoryRef,
+			"acmReference": h.ACMReference,
+			"hostsGuests":  true,
 		},
 	}
 }

@@ -22,6 +22,7 @@ const (
 	PhaseValidated  Phase = "validated"  // topology (+ plan) checks passed
 	PhaseDeploying  Phase = "deploying"  // deploy job running against inventory
 	PhaseDeployed   Phase = "deployed"   // plan accepted / orchestration complete (MVP)
+	PhaseFailed     Phase = "failed"     // deploy stopped — Clean or Delete before continuing
 	// Legacy milestones retained for older mockups / future fine-grained progress.
 	PhaseHubReady  Phase = "hub-ready"
 	PhaseACMReady  Phase = "acm-ready"

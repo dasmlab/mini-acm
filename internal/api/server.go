@@ -95,6 +95,7 @@ func (s *Server) routes() chi.Router {
 			r.Post("/mockups/{id}/validate", s.validateMockup)
 			r.Post("/mockups/{id}/deploy", s.deployMockup)
 			r.Get("/mockups/{id}/deploy", s.getDeploy)
+			r.Post("/mockups/{id}/clean", s.cleanMockup)
 			r.Delete("/mockups/{id}", s.deleteMockup)
 
 			r.Get("/inventory", s.listInventory)
@@ -154,6 +155,9 @@ func (s *Server) listMockups(w http.ResponseWriter, _ *http.Request) {
 	if list == nil {
 		list = []*mockup.MockUp{}
 	}
+	for i := range list {
+		list[i] = s.reconcileFailedPhase(list[i])
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 
@@ -177,7 +181,26 @@ func (s *Server) getMockup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, http.StatusOK, m)
+	writeJSON(w, http.StatusOK, s.reconcileFailedPhase(m))
+}
+
+// reconcileFailedPhase upgrades validated/deploying → failed when last deploy job failed.
+func (s *Server) reconcileFailedPhase(m *mockup.MockUp) *mockup.MockUp {
+	if m == nil || s.deploy == nil {
+		return m
+	}
+	if m.Status.Phase == mockup.PhaseFailed || m.Status.Phase == mockup.PhaseDeployed {
+		return m
+	}
+	job, err := s.deploy.GetJob(m.Metadata.ID)
+	if err != nil || job == nil || job.Status != "failed" {
+		return m
+	}
+	updated, err := s.store.SetPhase(m.Metadata.ID, mockup.PhaseFailed, job.Message)
+	if err != nil || updated == nil {
+		return m
+	}
+	return updated
 }
 
 func (s *Server) putMockup(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +339,15 @@ func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deployMockup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	existing, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := existing.RequireUnlocked(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	res, m, err := s.store.ValidatePlan(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -354,6 +386,25 @@ func (s *Server) deployMockup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Soft preflight from last probe facts (EE stage is authoritative).
+	if s.inventory != nil && host != nil {
+		if v := strings.TrimSpace(host.Facts["openshiftInstall"]); v == "missing" || v == "" {
+			// Re-probe once so Inventory UI and Deploy stay in sync.
+			if pr, err := s.inventory.Probe(host.ID); err == nil && pr != nil {
+				host = pr.Host
+				if pr.Host != nil {
+					host = pr.Host
+				}
+				if !pr.InstallerReady {
+					http.Error(w,
+						"openshift-install not on inventory host — Probe shows it missing; install the client on the MACHINE-HOST before Deploy (EE prereq)",
+						http.StatusConflict)
+					return
+				}
+			}
+		}
+	}
+
 	job, err := s.deploy.Start(id, host.ID, host.Name, host.Endpoint())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -380,9 +431,22 @@ func (s *Server) getDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, _ := s.store.Get(id)
+	m = s.reconcileFailedPhase(m)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"job":    job,
 		"mockup": m,
+	})
+}
+
+func (s *Server) cleanMockup(w http.ResponseWriter, r *http.Request) {
+	m, err := s.store.CleanFailed(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mockup":  m,
+		"message": m.Status.Message,
 	})
 }
 

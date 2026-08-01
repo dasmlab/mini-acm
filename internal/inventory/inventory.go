@@ -21,25 +21,25 @@ const (
 
 // MachineHost is a physical/nested RHEL host that can run libvirtd + guests.
 type MachineHost struct {
-	ID             string            `json:"id" yaml:"id"`
-	Name           string            `json:"name" yaml:"name"`
-	SSHUser        string            `json:"sshUser" yaml:"sshUser"`
-	SSHHost        string            `json:"sshHost" yaml:"sshHost"` // local / LAN address
-	SSHPort        int               `json:"sshPort,omitempty" yaml:"sshPort,omitempty"`
-	IdentityFile   string            `json:"identityFile,omitempty" yaml:"identityFile,omitempty"` // private key path — never key material
-	Notes          string            `json:"notes,omitempty" yaml:"notes,omitempty"`
+	ID           string `json:"id" yaml:"id"`
+	Name         string `json:"name" yaml:"name"`
+	SSHUser      string `json:"sshUser" yaml:"sshUser"`
+	SSHHost      string `json:"sshHost" yaml:"sshHost"` // local / LAN address
+	SSHPort      int    `json:"sshPort,omitempty" yaml:"sshPort,omitempty"`
+	IdentityFile string `json:"identityFile,omitempty" yaml:"identityFile,omitempty"` // private key path — never key material
+	Notes        string `json:"notes,omitempty" yaml:"notes,omitempty"`
 	// Stretched: probe/fix via StretchedHost (e.g. WireGuard VPN) when the cluster
 	// cannot reach the LAN address — optional boundary-crossing path, not a full VPN installer.
-	Stretched      bool              `json:"stretched,omitempty" yaml:"stretched,omitempty"`
-	StretchedHost  string            `json:"stretchedHost,omitempty" yaml:"stretchedHost,omitempty"`
-	Seed           bool              `json:"seed,omitempty" yaml:"seed,omitempty"`
-	Status         string            `json:"status" yaml:"status"`
-	StatusMessage  string            `json:"statusMessage,omitempty" yaml:"statusMessage,omitempty"`
-	LastProbedAt   string            `json:"lastProbedAt,omitempty" yaml:"lastProbedAt,omitempty"`
-	Facts          map[string]string `json:"facts,omitempty" yaml:"facts,omitempty"`
-	Issues         []ProbeIssue      `json:"issues,omitempty" yaml:"issues,omitempty"`
-	CreatedAt      string            `json:"createdAt" yaml:"createdAt"`
-	UpdatedAt      string            `json:"updatedAt" yaml:"updatedAt"`
+	Stretched     bool              `json:"stretched,omitempty" yaml:"stretched,omitempty"`
+	StretchedHost string            `json:"stretchedHost,omitempty" yaml:"stretchedHost,omitempty"`
+	Seed          bool              `json:"seed,omitempty" yaml:"seed,omitempty"`
+	Status        string            `json:"status" yaml:"status"`
+	StatusMessage string            `json:"statusMessage,omitempty" yaml:"statusMessage,omitempty"`
+	LastProbedAt  string            `json:"lastProbedAt,omitempty" yaml:"lastProbedAt,omitempty"`
+	Facts         map[string]string `json:"facts,omitempty" yaml:"facts,omitempty"`
+	Issues        []ProbeIssue      `json:"issues,omitempty" yaml:"issues,omitempty"`
+	CreatedAt     string            `json:"createdAt" yaml:"createdAt"`
+	UpdatedAt     string            `json:"updatedAt" yaml:"updatedAt"`
 }
 
 // CreateReq creates a new inventory entry.
@@ -56,17 +56,18 @@ type CreateReq struct {
 
 // ProbeResult is the outcome of an SSH (+ libvirt / podman) smoke check.
 type ProbeResult struct {
-	OK            bool              `json:"ok"`
-	Reachable     bool              `json:"reachable"`
-	AuthOK        bool              `json:"authOK"`
-	LibvirtReady  bool              `json:"libvirtReady"`
-	PodmanReady   bool              `json:"podmanReady"`
-	Orchestration bool              `json:"orchestration"` // green: ready to orchestrate a MockUp plan
-	Message       string            `json:"message"`
-	Facts         map[string]string `json:"facts,omitempty"`
-	Issues        []ProbeIssue      `json:"issues,omitempty"`
-	CheckedAt     string            `json:"checkedAt"`
-	Host          *MachineHost      `json:"host,omitempty"`
+	OK             bool              `json:"ok"`
+	Reachable      bool              `json:"reachable"`
+	AuthOK         bool              `json:"authOK"`
+	LibvirtReady   bool              `json:"libvirtReady"`
+	PodmanReady    bool              `json:"podmanReady"`
+	InstallerReady bool              `json:"installerReady"` // openshift-install on PATH
+	Orchestration  bool              `json:"orchestration"`  // green: ready to orchestrate a MockUp plan
+	Message        string            `json:"message"`
+	Facts          map[string]string `json:"facts,omitempty"`
+	Issues         []ProbeIssue      `json:"issues,omitempty"`
+	CheckedAt      string            `json:"checkedAt"`
+	Host           *MachineHost      `json:"host,omitempty"`
 }
 
 // Store persists inventory under dataDir/inventory/<id>.yaml.

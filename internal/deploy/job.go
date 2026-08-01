@@ -90,8 +90,8 @@ func NewEngine(mockups *mockup.Store, inv *inventory.Store) *Engine {
 
 func defaultStages() []Stage {
 	return []Stage{
+		{ID: StageEE, Label: "Execution environment", Detail: "Prereqs: podman, openshift-install, Ansible EE on inventory host", Icon: "precision_manufacturing", Status: StagePending},
 		{ID: StageGenerate, Label: "Generate objects", Detail: "ISO/config artifacts & derived YAML for bootable guests", Icon: "description", Status: StagePending},
-		{ID: StageEE, Label: "Execution environment", Detail: "Podman / Ansible runner on the ready inventory host", Icon: "precision_manufacturing", Status: StagePending},
 		{ID: StageVInfra, Label: "Build vInfra", Detail: "libvirt network, storage pool, and vHost definitions", Icon: "lan", Status: StagePending},
 		{ID: StageOCP, Label: "Deploy OCP + appliances", Detail: "OCP-MGMT (SNO) and VyOS / edge appliances", Icon: "memory", Status: StagePending},
 		{ID: StageACM, Label: "Install ACM", Detail: "MCE / ACM operators on the management cluster", Icon: "extension", Status: StagePending},
@@ -129,6 +129,14 @@ func (e *Engine) GetJob(mockUpID string) (*Job, error) {
 
 // Start begins an async assembly-line deploy. Returns the initial job immediately.
 func (e *Engine) Start(mockUpID, inventoryID, hostName, hostEndpoint string) (*Job, error) {
+	m, err := e.mockups.Get(mockUpID)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.RequireUnlocked(); err != nil {
+		return nil, err
+	}
+
 	e.mu.Lock()
 	if e.active[mockUpID] {
 		e.mu.Unlock()
@@ -191,13 +199,9 @@ func (e *Engine) finish(j *Job, status, msg string) {
 	j.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 	e.log(j, "", "finished status=%s — %s", status, msg)
 	_ = e.SaveJob(j)
-	phase := mockup.PhaseValidated
+	phase := mockup.PhaseFailed
 	if status == JobSucceeded {
 		phase = mockup.PhaseDeployed
-	} else {
-		// Leave as deploying if mid-flight failure so UI shows failure on job, phase = validated-ish
-		// Prefer validated so user can retry Deploy.
-		phase = mockup.PhaseValidated
 	}
 	_, _ = e.mockups.SetPhase(j.MockUpID, phase, msg)
 	e.mu.Lock()
@@ -238,8 +242,8 @@ func (e *Engine) run(j *Job) {
 		id string
 		fn func(*Job) error
 	}{
-		{StageGenerate, e.stageGenerate},
 		{StageEE, e.stageEE},
+		{StageGenerate, e.stageGenerate},
 		{StageVInfra, e.stageVInfra},
 		{StageOCP, e.stageOCP},
 		{StageACM, e.stageACM},

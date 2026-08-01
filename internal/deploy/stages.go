@@ -61,12 +61,30 @@ func (e *Engine) stageGenerate(j *Job) error {
 }
 
 func (e *Engine) stageEE(j *Job) error {
-	e.log(j, StageEE, "check podman + quay.io/ansible/creator-ee on %s", j.HostEndpoint)
+	e.log(j, StageEE, "check podman + openshift-install + quay.io/ansible/creator-ee on %s", j.HostEndpoint)
 	_ = e.SaveJob(j)
 	script := `set -eu
 echo "EE_CHECK_START"
-command -v podman >/dev/null
-podman --version
+if command -v podman >/dev/null 2>&1; then
+  echo "podman=$(podman --version 2>/dev/null | head -1)"
+  echo "HAS_PODMAN=1"
+else
+  echo "HAS_PODMAN=0"
+fi
+if command -v openshift-install >/dev/null 2>&1; then
+  echo "openshift-install=$(openshift-install version 2>&1 | sed -n '1p')"
+  echo "HAS_INSTALLER=1"
+else
+  echo "HAS_INSTALLER=0"
+fi
+if [ "${HAS_PODMAN:-0}" != "1" ]; then
+  echo "EE_FAIL=podman"
+  exit 0
+fi
+if [ "${HAS_INSTALLER:-0}" != "1" ]; then
+  echo "EE_FAIL=openshift-install"
+  exit 0
+fi
 # Lightweight runner image check (pull only if missing — keep lab friendly)
 if ! podman image exists quay.io/ansible/creator-ee:latest 2>/dev/null; then
   echo "PULLING creator-ee (may take a minute)…"
@@ -79,24 +97,20 @@ echo "EE_OK=1"
 `
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
-		// Soft-fail pull issues: still require podman present
-		out2, _, err2 := e.inv.RunScript(j.InventoryID, `set -eu
-command -v podman
-podman --version
-echo EE_PODMAN_ONLY=1
-`)
-		if err2 != nil {
-			return fmt.Errorf("execution env: %v (%s)", err, truncate(out, 500))
-		}
-		e.setStage(j, StageEE, StageOK,
-			"Podman ready on host (Ansible EE image pull deferred/failed — will retry on later runs)",
-			out2+"\n---\n"+out)
-		return nil
+		return fmt.Errorf("execution env: %v (%s)", err, truncate(out, 500))
+	}
+	e.log(j, StageEE, "host stdout:\n%s", trimHostOut(out))
+	_ = e.SaveJob(j)
+	if strings.Contains(out, "EE_FAIL=podman") {
+		return blocked("podman not on inventory host — required for EE/runner; Probe → Fix this (install-podman), then Clean + Deploy")
+	}
+	if strings.Contains(out, "EE_FAIL=openshift-install") {
+		return blocked("openshift-install not on inventory host — required before OCP-MGMT; install the client on the MACHINE-HOST (Inventory Probe will flag it), then Clean + Deploy. Plan files are not staged until EE passes.")
 	}
 	if !strings.Contains(out, "EE_OK=1") {
 		return fmt.Errorf("EE check incomplete: %s", truncate(out, 500))
 	}
-	e.setStage(j, StageEE, StageOK, "Podman + Ansible creator-EE ready on inventory host", out)
+	e.setStage(j, StageEE, StageOK, "Podman + openshift-install + Ansible creator-EE ready on inventory host", out)
 	e.log(j, StageEE, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
 	return nil

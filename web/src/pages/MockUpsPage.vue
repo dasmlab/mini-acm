@@ -49,24 +49,33 @@
                 · OCP-MGMT (SNO) only
               </template>
             </div>
-            <div v-if="m.status?.message" class="text-caption q-mt-xs">{{ m.status.message }}</div>
+            <div v-if="m.status?.message" class="text-caption q-mt-xs" :class="{ 'text-negative': isFailed(m) }">{{ m.status.message }}</div>
           </q-card-section>
           <q-separator />
           <q-card-actions align="right" class="q-gutter-xs">
             <q-btn flat dense size="sm" color="primary" label="Topology"
               @click="$router.push({ name: 'topology', params: { id: m.metadata.id } })" />
             <q-btn flat dense size="sm" color="primary" label="Wizard"
+              :disable="isLocked(m)"
               @click="$router.push({ name: 'wizard', params: { id: m.metadata.id } })" />
             <q-btn flat dense size="sm" color="primary" label="Derive"
-              :loading="deriveBusy === m.metadata.id" @click="doDerive(m)" />
+              :loading="deriveBusy === m.metadata.id"
+              :disable="isLocked(m) || phaseBusy(m)"
+              @click="doDerive(m)" />
             <q-btn flat dense size="sm" color="deep-purple-7" label="Validate"
               :loading="validateBusy === m.metadata.id"
-              :disable="phaseBusy(m)"
+              :disable="isLocked(m) || phaseBusy(m)"
               @click="doValidate(m)" />
             <q-btn flat dense size="sm" color="orange-9" label="Deploy"
               :loading="deployBusy === m.metadata.id"
-              :disable="phaseBusy(m) || !canDeploy(m)"
+              :disable="isLocked(m) || phaseBusy(m) || !canDeploy(m)"
               @click="doDeploy(m)" />
+            <q-btn
+              v-if="isFailed(m) || isDeploying(m)"
+              flat dense size="sm" color="warning" label="Clean"
+              :loading="cleanBusy === m.metadata.id"
+              @click="doClean(m)"
+            />
             <q-btn flat dense size="sm" color="negative" label="Delete" @click="doDelete(m)" />
           </q-card-actions>
         </q-card>
@@ -100,7 +109,7 @@
 import { onMounted, ref } from 'vue'
 import { Dialog, Notify } from 'quasar'
 import {
-  listMockups, deleteMockup, deriveMockup, validateMockup, deployMockup, getCatalog,
+  listMockups, deleteMockup, deriveMockup, validateMockup, deployMockup, cleanMockup, getCatalog,
 } from 'src/services/api'
 import CreateMockUpDialog from 'src/components/CreateMockUpDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
@@ -114,6 +123,7 @@ const createOpen = ref(false)
 const deriveBusy = ref('')
 const validateBusy = ref('')
 const deployBusy = ref('')
+const cleanBusy = ref('')
 const deployOpen = ref(false)
 const deployTarget = ref(null)
 const deployJob = ref(null)
@@ -144,6 +154,7 @@ function statusColor(phase) {
     validated: 'deep-purple-6',
     deploying: 'orange-8',
     deployed: 'positive',
+    failed: 'negative',
     'hub-ready': 'blue-7',
     'acm-ready': 'teal-7',
     clustered: 'orange-7',
@@ -153,7 +164,19 @@ function statusColor(phase) {
 
 function phaseBusy(m) {
   const id = m.metadata.id
-  return deriveBusy.value === id || validateBusy.value === id || deployBusy.value === id
+  return deriveBusy.value === id || validateBusy.value === id || deployBusy.value === id || cleanBusy.value === id
+}
+
+function isFailed(m) {
+  return (m.status?.phase || '') === 'failed'
+}
+
+function isDeploying(m) {
+  return (m.status?.phase || '') === 'deploying'
+}
+
+function isLocked(m) {
+  return isFailed(m) || isDeploying(m)
 }
 
 function canDeploy(m) {
@@ -237,6 +260,23 @@ async function doDeploy(m) {
 
 async function onDeployFinished() {
   await load()
+}
+
+async function doClean(m) {
+  cleanBusy.value = m.metadata.id
+  try {
+    const res = await cleanMockup(m.metadata.id)
+    Notify.create({
+      type: 'positive',
+      message: res.message || 'Cleaned — Validate/Deploy unlocked',
+      timeout: 5000,
+    })
+    await load()
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    cleanBusy.value = ''
+  }
 }
 
 function doDelete(m) {

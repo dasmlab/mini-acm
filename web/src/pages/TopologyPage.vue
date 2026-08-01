@@ -28,12 +28,23 @@
         @update:model-value="onCanvasMode"
       />
       <q-btn
+        v-if="isLocked"
+        outline
+        color="warning"
+        icon="cleaning_services"
+        label="Clean"
+        class="q-mr-sm"
+        :loading="cleaning"
+        @click="onClean"
+      />
+      <q-btn
         outline
         color="deep-purple-7"
         icon="rule"
         label="Validate"
         class="q-mr-sm"
         :loading="validating"
+        :disable="isLocked"
         @click="onValidate"
       />
       <q-btn
@@ -43,6 +54,7 @@
         label="Deploy"
         class="q-mr-sm"
         :loading="deploying"
+        :disable="isLocked"
         @click="onDeploy"
       />
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
@@ -206,13 +218,16 @@
                 </div>
                 <div class="inspector-actions q-mt-md">
                   <q-btn flat color="primary" label="Wizard" icon="playlist_play"
+                    :disable="isLocked"
                     :to="{ name: 'wizard', params: { id } }" />
                   <q-btn flat color="primary" label="Derive" icon="description"
-                    :loading="deriving" @click="onDerive" />
+                    :disable="isLocked" :loading="deriving" @click="onDerive" />
                   <q-btn flat color="deep-purple-7" label="Validate" icon="rule"
-                    :loading="validating" @click="onValidate" />
+                    :disable="isLocked" :loading="validating" @click="onValidate" />
                   <q-btn flat color="orange-9" label="Deploy" icon="rocket_launch"
-                    :loading="deploying" @click="onDeploy" />
+                    :disable="isLocked" :loading="deploying" @click="onDeploy" />
+                  <q-btn v-if="isLocked" flat color="warning" label="Clean" icon="cleaning_services"
+                    :loading="cleaning" @click="onClean" />
                 </div>
               </div>
             </template>
@@ -330,7 +345,7 @@ import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, cleanMockup, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
@@ -343,6 +358,7 @@ const saving = ref(false)
 const deriving = ref(false)
 const validating = ref(false)
 const deploying = ref(false)
+const cleaning = ref(false)
 const deployOpen = ref(false)
 const deployJob = ref(null)
 const validateOpen = ref(false)
@@ -366,12 +382,18 @@ function phaseColor(phase) {
     validated: 'deep-purple-6',
     deploying: 'orange-8',
     deployed: 'positive',
+    failed: 'negative',
     'hub-ready': 'blue-7',
     'acm-ready': 'teal-7',
     clustered: 'orange-7',
     ready: 'positive',
   }[phase] || 'grey-6'
 }
+
+const isLocked = computed(() => {
+  const p = mockup.value?.status?.phase || ''
+  return p === 'failed' || p === 'deploying'
+})
 
 const layerOptions = computed(() => {
   const all = [
@@ -883,6 +905,23 @@ async function onDeployFinished(data) {
     try {
       mockup.value = await getMockup(props.id)
     } catch { /* ignore */ }
+  }
+}
+
+async function onClean() {
+  cleaning.value = true
+  try {
+    const res = await cleanMockup(props.id)
+    if (res.mockup) mockup.value = res.mockup
+    Notify.create({
+      type: 'positive',
+      message: res.message || 'Cleaned — Validate/Deploy unlocked',
+      timeout: 5000,
+    })
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    cleaning.value = false
   }
 }
 

@@ -117,6 +117,12 @@ export async function getDeployStatus(id) {
   return data
 }
 
+/** Unlock a failed/stuck MockUp so Validate/Deploy can run again. */
+export async function cleanMockup(id) {
+  const { data } = await api.post(`/mockups/${id}/clean`)
+  return data
+}
+
 export async function listInventory() {
   const { data } = await api.get('/inventory')
   return data
