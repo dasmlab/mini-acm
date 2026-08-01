@@ -1,4 +1,4 @@
-name: mini-mock CX Pipeline
+name: mock-me CX Pipeline
 
 on:
   push:
@@ -65,12 +65,12 @@ jobs:
             buildah bud \
               --build-arg BUILD_VERSION="${VERSION_TAG}" \
               -f deployments/containers/Containerfile \
-              -t "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}" .
+              -t "ghcr.io/dasmlab/mock-me:${VERSION_TAG}" .
           else
             docker build \
               --build-arg BUILD_VERSION="${VERSION_TAG}" \
               -f deployments/containers/Containerfile \
-              -t "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}" .
+              -t "ghcr.io/dasmlab/mock-me:${VERSION_TAG}" .
           fi
 
       - name: Push image
@@ -78,10 +78,10 @@ jobs:
           VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
         run: |
           echo "${GHCR_TOKEN}" | docker login ghcr.io -u dasmlab --password-stdin
-          if command -v buildah >/dev/null 2>&1 && ! docker image inspect "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}" >/dev/null 2>&1; then
-            buildah push "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}"
+          if command -v buildah >/dev/null 2>&1 && ! docker image inspect "ghcr.io/dasmlab/mock-me:${VERSION_TAG}" >/dev/null 2>&1; then
+            buildah push "ghcr.io/dasmlab/mock-me:${VERSION_TAG}"
           else
-            docker push "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}"
+            docker push "ghcr.io/dasmlab/mock-me:${VERSION_TAG}"
           fi
 
       - name: Smoke test
@@ -89,12 +89,12 @@ jobs:
           VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
         run: |
           set -euo pipefail
-          cid="mini-mock-smoke-${GITHUB_SHA::8}"
+          cid="mock-me-smoke-${GITHUB_SHA::8}"
           docker rm -f "${cid}" 2>/dev/null || true
           # Ensure local engine has the tag we just pushed (buildah vs docker stores).
-          docker pull "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}"
+          docker pull "ghcr.io/dasmlab/mock-me:${VERSION_TAG}"
           # Avoid host port collisions — hit the container network IP directly.
-          docker run -d --name "${cid}" "ghcr.io/dasmlab/mini-mock:${VERSION_TAG}"
+          docker run -d --name "${cid}" "ghcr.io/dasmlab/mock-me:${VERSION_TAG}"
           trap 'docker rm -f "${cid}" 2>/dev/null || true' EXIT
           ip=""
           for _ in $(seq 1 30); do
@@ -126,7 +126,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          FQDN="mini-mock.apps.2026-prod-1.ocp.dasmlab.org"
+          FQDN="mock-me.apps.2026-prod-1.ocp.dasmlab.org"
           if ! command -v ssh >/dev/null 2>&1; then
             echo "WARN: ssh not on runner — skip HAProxy CERT ensure (FQDN already live)"
             exit 0
@@ -175,14 +175,14 @@ jobs:
           for CLUSTER_NAME in "${TARGET_CLUSTERS[@]}"; do
             STORAGE_CLASS="$(storage_class_for_cluster "${CLUSTER_NAME}")"
             sed -e "s|__VERSION__|${VERSION_TAG}|g" -e "s|__STORAGE_CLASS__|${STORAGE_CLASS}|g" \
-              k8s_envelope/mini-mock_deploy-ocp.yaml > "generated-${CLUSTER_NAME}.yaml"
-            DEPLOY_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mini-mock/live"
-            ARCHIVE_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mini-mock/archived"
+              k8s_envelope/mock-me_deploy-ocp.yaml > "generated-${CLUSTER_NAME}.yaml"
+            DEPLOY_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mock-me/live"
+            ARCHIVE_DIR="dasmlab-live-cicd/clusters/${CLUSTER_NAME}/mock-me/archived"
             mkdir -p "${DEPLOY_DIR}" "${ARCHIVE_DIR}"
-            for old in "${DEPLOY_DIR}"/mini-mock-v*.yaml; do
+            for old in "${DEPLOY_DIR}"/mock-me-v*.yaml; do
               [ -e "${old}" ] && mv "${old}" "${ARCHIVE_DIR}/"
             done
-            cp "generated-${CLUSTER_NAME}.yaml" "${DEPLOY_DIR}/mini-mock-${VERSION_TAG}.yaml"
+            cp "generated-${CLUSTER_NAME}.yaml" "${DEPLOY_DIR}/mock-me-${VERSION_TAG}.yaml"
           done
 
           cd dasmlab-live-cicd
@@ -193,5 +193,5 @@ jobs:
             echo "No GitOps changes"
             exit 0
           fi
-          git commit -m "Auto-publish mini-mock ${VERSION_TAG}"
+          git commit -m "Auto-publish mock-me ${VERSION_TAG}"
           git push

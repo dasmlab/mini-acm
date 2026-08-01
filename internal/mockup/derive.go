@@ -55,14 +55,14 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 func gatewayDoc(m *MockUp) map[string]any {
 	g := m.Spec.Gateway
 	return map[string]any{
-		"apiVersion": "mini-mock.dasmlab.org/v1alpha1",
+		"apiVersion": "mock-me.dasmlab.org/v1alpha1",
 		"kind":       "Gateway",
 		"metadata": map[string]any{
 			"name":  g.Hostname,
 			"notes": g.Notes,
 			"labels": map[string]any{
-				"mini-mock.dasmlab.org/role": "edge-router",
-				"mini-mock.dasmlab.org/image": g.Image,
+				"mock-me.dasmlab.org/role": "edge-router",
+				"mock-me.dasmlab.org/image": g.Image,
 			},
 		},
 		"spec": map[string]any{
@@ -86,13 +86,13 @@ func gatewayDoc(m *MockUp) map[string]any {
 func infraHostDoc(m *MockUp) map[string]any {
 	h := m.Spec.InfraHost
 	return map[string]any{
-		"apiVersion": "mini-mock.dasmlab.org/v1alpha1",
+		"apiVersion": "mock-me.dasmlab.org/v1alpha1",
 		"kind":       "InfraHost",
 		"metadata": map[string]any{
 			"name":  h.Hostname,
 			"notes": h.Notes,
 			"labels": map[string]any{
-				"mini-mock.dasmlab.org/role": "machine-host",
+				"mock-me.dasmlab.org/role": "machine-host",
 				"acm.reference":             "BareMetalHost-analogue",
 			},
 		},
@@ -123,7 +123,7 @@ func hubDoc(m *MockUp) map[string]any {
 	netName := or(ih.NetworkName, "ocp-lab")
 	pool := or(ih.StoragePool, "default")
 	return map[string]any{
-		"apiVersion": "mini-mock.dasmlab.org/v1alpha1",
+		"apiVersion": "mock-me.dasmlab.org/v1alpha1",
 		"kind":       "Hub",
 		"metadata":   map[string]any{"name": m.Metadata.Name, "notes": m.Metadata.Notes},
 		"hub": map[string]any{
@@ -167,7 +167,7 @@ func clusterDoc(m *MockUp, c ClusterNode) map[string]any {
 	netName := or(ih.NetworkName, "ocp-lab")
 	pool := or(ih.StoragePool, "default")
 	return map[string]any{
-		"apiVersion": "mini-mock.dasmlab.org/v1alpha1",
+		"apiVersion": "mock-me.dasmlab.org/v1alpha1",
 		"kind":       "ManagedCluster",
 		"metadata":   map[string]any{"name": c.Name, "notes": notes},
 		"cluster": map[string]any{

@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/dasmlab/mini-mock/internal/config"
+	"github.com/dasmlab/mock-me/internal/config"
 )
 
 // WriteHAProxy emits an HAProxy config for API/MCS/ingress VIP frontends.
 func WriteHAProxy(dir string, cfg *config.ClusterConfig) error {
 	path := filepath.Join(dir, "haproxy.cfg")
-	const tpl = `# mini-mock generated — bind VIPs on the provisioning host / gateway
+	const tpl = `# mock-me generated — bind VIPs on the provisioning host / gateway
 global
   log /dev/log local0
 
@@ -82,8 +82,8 @@ backend ingress_https_backends
 
 // WriteDNSMasq emits host records for api / api-int / apps.
 func WriteDNSMasq(dir string, cfg *config.ClusterConfig) error {
-	path := filepath.Join(dir, "dnsmasq.d-mini-mock.conf")
-	content := fmt.Sprintf(`# mini-mock DNS for %s.%s
+	path := filepath.Join(dir, "dnsmasq.d-mock-me.conf")
+	content := fmt.Sprintf(`# mock-me DNS for %s.%s
 address=/api.%s.%s/%s
 address=/api-int.%s.%s/%s
 address=/.apps.%s.%s/%s

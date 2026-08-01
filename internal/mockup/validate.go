@@ -72,7 +72,7 @@ func ValidateTopology(m *MockUp) ValidationResult {
 			})
 		}
 	} else {
-		// mini-mock (and default): ACM lab picture
+		// mock-me (and default): ACM lab picture
 		if hasACM && !hasHub {
 			res.Issues = append(res.Issues, ValidationIssue{
 				Code: "acm-needs-mgmt", Severity: "error", Object: m.Spec.ACM.ID,

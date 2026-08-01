@@ -308,7 +308,7 @@ func defaultSingleSNOMockUp(id, name, domain, provider, notes, now string) *Mock
 	hubID := "hub"
 	gw := defaultGateway()
 	return &MockUp{
-		APIVersion: "mini-mock.dasmlab.org/v1alpha1",
+		APIVersion: "mock-me.dasmlab.org/v1alpha1",
 		Kind:       "MockUp",
 		Metadata: Metadata{
 			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
@@ -377,7 +377,7 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 	c1 := newClusterNode(1, "4.18", "10.77.30.12", "10.77.30.13")
 	gw := defaultGateway()
 	return &MockUp{
-		APIVersion: "mini-mock.dasmlab.org/v1alpha1",
+		APIVersion: "mock-me.dasmlab.org/v1alpha1",
 		Kind:       "MockUp",
 		Metadata: Metadata{
 			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
@@ -434,7 +434,7 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 }
 
 func defaultInfraHost(rackName string) InfraHostNode {
-	host := "rhel10-vhost-mini-mock"
+	host := "rhel10-vhost-mock-me"
 	if rackName != "" {
 		host = "prov-" + rackName
 	}
@@ -600,8 +600,10 @@ func normalize(m *MockUp) {
 	if m.Spec.Style == "" || m.Spec.Style == "mini-acm-multi-cluster" {
 		m.Spec.Style = StyleACMMultiCluster
 	}
-	if m.APIVersion == "" || m.APIVersion == "mini-acm.dasmlab.org/v1alpha1" {
-		m.APIVersion = "mini-mock.dasmlab.org/v1alpha1"
+	// Migrate legacy API groups from prior product names.
+	switch m.APIVersion {
+	case "", "mini-acm.dasmlab.org/v1alpha1", "mini-mock.dasmlab.org/v1alpha1":
+		m.APIVersion = "mock-me.dasmlab.org/v1alpha1"
 	}
 	if m.Spec.CanvasMode == "" {
 		m.Spec.CanvasMode = "guided"

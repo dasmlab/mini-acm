@@ -1,4 +1,4 @@
-// Command mini-mock orchestrates small lab OpenShift hubs (SNO + ACM) and
+// Command mock-me orchestrates small lab OpenShift hubs (SNO + ACM) and
 // ACM-managed compact clusters on pluggable infrastructure providers.
 //
 // LAB / TEST / DEV ONLY. Not a supported production installer.
@@ -11,7 +11,7 @@ import (
 
 const banner = `
 ================================================================================
-  mini-mock — LAB / TEST / DEV ONLY
+  mock-me — LAB / TEST / DEV ONLY
 
   Builds a virtual rack for ACM lifecycle demos:
     hub create     → local Agent-based SNO + optional ACM

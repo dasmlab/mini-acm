@@ -5,10 +5,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dasmlab/mini-mock/internal/acm"
-	"github.com/dasmlab/mini-mock/internal/config"
-	"github.com/dasmlab/mini-mock/internal/hub"
-	"github.com/dasmlab/mini-mock/internal/provider"
+	"github.com/dasmlab/mock-me/internal/acm"
+	"github.com/dasmlab/mock-me/internal/config"
+	"github.com/dasmlab/mock-me/internal/hub"
+	"github.com/dasmlab/mock-me/internal/provider"
 )
 
 func newHubCmd(gf *globalFlags) *cobra.Command {

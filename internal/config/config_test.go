@@ -10,7 +10,7 @@ func TestLoadHubDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "hub.yaml")
 	content := `
-apiVersion: mini-mock.dasmlab.org/v1alpha1
+apiVersion: mock-me.dasmlab.org/v1alpha1
 kind: Hub
 metadata:
   name: hub

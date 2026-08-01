@@ -2,14 +2,14 @@ package mockup
 
 import "testing"
 
-func TestCatalogHasMiniACM(t *testing.T) {
+func TestCatalogHasACMStyle(t *testing.T) {
 	c := Catalog()
 	if len(c.Genres) < 2 {
 		t.Fatalf("want genres, got %d", len(c.Genres))
 	}
 	s := LookupStyle(StyleACMMultiCluster)
 	if s == nil || !s.Available {
-		t.Fatal("mini-mock style must be available")
+		t.Fatal("mock-me style must be available")
 	}
 	sno := LookupStyle(StyleSingleSNOOCP)
 	if sno == nil || !sno.Available {

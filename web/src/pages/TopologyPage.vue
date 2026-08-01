@@ -45,7 +45,7 @@
           <q-item v-else disable>
             <q-item-section avatar><q-icon name="developer_board" color="grey" /></q-item-section>
             <q-item-section>
-              <q-item-label>OCP-DEPLOY (mini-mock only)</q-item-label>
+              <q-item-label>OCP-DEPLOY (ACM Multi-Cluster only)</q-item-label>
               <q-item-label caption>Single SNO style stops at OCP-MGMT</q-item-label>
             </q-item-section>
           </q-item>
@@ -371,7 +371,7 @@ const layerHint = computed(() => {
   }
   if (layer.value === 'cluster') {
     return isSingleSNO.value
-      ? 'OCP-MGMT (SNO) — stop before ACM; promote style to mini-mock to add ACM + OCP-DEPLOY'
+      ? 'OCP-MGMT (SNO) — stop before ACM; promote style to ACM Multi-Cluster to add ACM + OCP-DEPLOY'
       : 'OCP objects — ACM on OCP-MGMT governs OCP-DEPLOY (not full self-mgmt yet)'
   }
   if (layer.value === 'app') {
@@ -398,7 +398,7 @@ const objectSummary = computed(() => {
   if (style === 'single-sno-ocp') {
     return `Single SNO · adapter ${p} · ${guests} vHosts · OCP-MGMT`
   }
-  return `mini-mock · adapter ${p} · ${guests} vHosts · OCP-MGMT · ${n} OCP-DEPLOY`
+  return `mock-me · adapter ${p} · ${guests} vHosts · OCP-MGMT · ${n} OCP-DEPLOY`
 })
 
 const objectRows = computed(() => {
@@ -504,7 +504,7 @@ const selectedNodeData = computed(() => {
       id: 'adapter',
       provider: mockup.value.spec.provider || 'libvirt',
       mode: 'local',
-      notes: 'mini-mock (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
+      notes: 'mock-me (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
     }
   }
   if (k === 'vhost') {

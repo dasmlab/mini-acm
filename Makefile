@@ -1,19 +1,19 @@
 # ==============================================================================
-# mini-mock — LAB / TEST / DEV ONLY
+# mock-me — LAB / TEST / DEV ONLY
 # Virtual rack for ACM hub SNO + compact managed clusters. See README.md.
 # ==============================================================================
 
-BINARY_NAME    := mini-mock
+BINARY_NAME    := mock-me
 BIN_DIR        := bin
 IMAGE_TOOL     ?= podman
-IMAGE_NAME     ?= quay.io/dasmlab/mini-mock
+IMAGE_NAME     ?= quay.io/dasmlab/mock-me
 IMAGE_TAG      ?= latest
 VERSION        ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS        := -X main.version=$(VERSION)
 
 .PHONY: help
 help: ## Show this help
-	@echo "mini-mock — LAB/TEST/DEV only (see README.md)"
+	@echo "mock-me — LAB/TEST/DEV only (see README.md)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 

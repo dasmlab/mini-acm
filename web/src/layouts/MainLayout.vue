@@ -4,7 +4,7 @@
       <q-toolbar>
         <q-btn flat dense round icon="menu" aria-label="Menu" @click="leftDrawerOpen = !leftDrawerOpen" />
         <q-icon name="hub" size="sm" class="q-mx-sm" />
-        <q-toolbar-title>mini-mock</q-toolbar-title>
+        <q-toolbar-title>mock-me</q-toolbar-title>
         <q-chip square dense color="white" text-color="primary" class="q-mr-sm">{{ versionLabel }}</q-chip>
         <template v-if="auth.ready.value">
           <span v-if="auth.authEnabled.value && auth.isAuthenticated.value" class="text-caption q-mr-sm">
@@ -22,7 +22,7 @@
       </q-toolbar>
       <div class="warning-banner text-center q-py-xs text-caption">
         <q-icon name="science" size="xs" class="q-mb-xs" />
-        LAB / TEST / DEV ONLY — mini-mock · MockUp canvases (ACM Multi-Cluster first)
+        LAB / TEST / DEV ONLY — mock-me · MockUp canvases (ACM Multi-Cluster first)
         <q-icon name="science" size="xs" class="q-mb-xs" />
       </div>
     </q-header>

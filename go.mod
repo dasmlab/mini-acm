@@ -1,4 +1,4 @@
-module github.com/dasmlab/mini-mock
+module github.com/dasmlab/mock-me
 
 go 1.25.0
 

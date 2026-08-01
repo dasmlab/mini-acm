@@ -1,4 +1,4 @@
-// Package api serves the mini-mock UI + MockUp REST API.
+// Package api serves the mock-me UI + MockUp REST API.
 package api
 
 import (
@@ -12,9 +12,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/dasmlab/mini-mock/internal/auth"
-	"github.com/dasmlab/mini-mock/internal/inventory"
-	"github.com/dasmlab/mini-mock/internal/mockup"
+	"github.com/dasmlab/mock-me/internal/auth"
+	"github.com/dasmlab/mock-me/internal/inventory"
+	"github.com/dasmlab/mock-me/internal/mockup"
 )
 
 type Server struct {

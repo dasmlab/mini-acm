@@ -4,7 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	// Register providers.
-	_ "github.com/dasmlab/mini-mock/internal/provider/libvirt"
+	_ "github.com/dasmlab/mock-me/internal/provider/libvirt"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
@@ -20,18 +20,18 @@ func newRootCmd() *cobra.Command {
 	gf := &globalFlags{}
 
 	root := &cobra.Command{
-		Use:   "mini-mock",
+		Use:   "mock-me",
 		Short: "Lab orchestrator for ACM hub SNO + compact managed clusters",
 		Long: banner + `
 Typical flow:
 
-  1. mini-mock serve                     # UI: MockUp → Topology → Wizard
+  1. mock-me serve                     # UI: MockUp → Topology → Wizard
   2. Derive YAML from MockUp, or:
   3. cp .env.example .env + hub/cluster YAML
-  4. mini-mock hub create --config hub.yaml --manual
-  5. mini-mock hub install-acm
-  6. mini-mock cluster create --manual
-  7. mini-mock cluster attach-iso --iso discovery.iso
+  4. mock-me hub create --config hub.yaml --manual
+  5. mock-me hub install-acm
+  6. mock-me cluster create --manual
+  7. mock-me cluster attach-iso --iso discovery.iso
 
 Provider layer presents bootable machines. ACM owns OCP install lifecycle.
 

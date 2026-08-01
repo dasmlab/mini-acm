@@ -1,5 +1,5 @@
 # ==============================================================================
-# mini-mock — LAB / TEST / DEV ONLY
+# mock-me — LAB / TEST / DEV ONLY
 # Multi-stage: Vue UI + Go CLI, then UBI minimal runtime with oc.
 # ==============================================================================
 
@@ -20,18 +20,18 @@ RUN go mod download
 
 COPY cmd ./cmd
 COPY internal ./internal
-COPY --from=web /web/dist/ ./cmd/mini-mock/static/
+COPY --from=web /web/dist/ ./cmd/mock-me/static/
 
 ARG VERSION=dev
 ARG BUILD_VERSION
 RUN VER="${BUILD_VERSION:-${VERSION}}"; \
-    CGO_ENABLED=0 go build -ldflags "-X main.version=${VER}" -o /build/mini-mock ./cmd/mini-mock
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${VER}" -o /build/mock-me ./cmd/mock-me
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
-LABEL org.opencontainers.image.title="mini-mock" \
+LABEL org.opencontainers.image.title="mock-me" \
       org.opencontainers.image.description="Lab orchestrator for ACM hub + compact clusters - LAB/TEST/DEV ONLY" \
-      org.opencontainers.image.source="https://github.com/dasmlab/mini-mock" \
+      org.opencontainers.image.source="https://github.com/dasmlab/mock-me" \
       io.dasmlab.warning="LAB_TEST_DEV_ONLY"
 
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz
@@ -41,13 +41,13 @@ RUN microdnf install -y tar gzip ca-certificates && \
     tar -xzf /tmp/oc.tar.gz -C /usr/local/bin oc && \
     rm -f /tmp/oc.tar.gz && \
     microdnf clean all && \
-    useradd -u 65532 -r -s /sbin/nologin minimock && \
+    useradd -u 65532 -r -s /sbin/nologin mockme && \
     mkdir -p /data && chown 65532:65532 /data
 
-COPY --from=build /build/mini-mock /usr/local/bin/mini-mock
-COPY config /opt/mini-mock/config
-COPY profiles /opt/mini-mock/profiles
-COPY manifests /opt/mini-mock/manifests
+COPY --from=build /build/mock-me /usr/local/bin/mock-me
+COPY config /opt/mock-me/config
+COPY profiles /opt/mock-me/profiles
+COPY manifests /opt/mock-me/manifests
 
 USER 65532
 WORKDIR /data
@@ -55,5 +55,5 @@ VOLUME ["/data"]
 EXPOSE 8080
 
 ENV DATA_DIR=/data
-ENTRYPOINT ["/usr/local/bin/mini-mock"]
+ENTRYPOINT ["/usr/local/bin/mock-me"]
 CMD ["serve", "--listen", ":8080", "--data-dir", "/data"]

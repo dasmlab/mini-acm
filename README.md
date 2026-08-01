@@ -1,10 +1,10 @@
-# mini-mock
+# mock-me
 
 > ================================================================================
 >
 > ## LAB / TEST / DEV ONLY
 >
-> **mini-mock** is a product canvas for MockUps across genres (Cluster Management,
+> **mock-me** is a product canvas for MockUps across genres (Cluster Management,
 > Application Development, Infrastructure, …). The first working style is
 > **ACM Multi-Cluster** under Cluster Management. It is **not** a supported
 > production OpenShift or ACM installer.
@@ -18,12 +18,12 @@
 
 ## What this is
 
-`mini-mock` is a Go CLI + UI that authors **MockUps** (topology blueprints) and
+`mock-me` is a Go CLI + UI that authors **MockUps** (topology blueprints) and
 can orchestrate lab racks. Genres/styles today:
 
 | Genre | Style | Status |
 |-------|--------|--------|
-| Cluster Management | **ACM Multi-Cluster** | Working miniMock |
+| Cluster Management | **ACM Multi-Cluster** | Working mock-me style |
 | Cluster Management | Single SNO OCP | Working (mgmt half only) |
 | Application Development | Windows UI / Web Full-Stack | Catalog stubs |
 | Infrastructure | Node · Network · Payload | Catalog stub |
@@ -38,8 +38,8 @@ Provider adapters own machines. ACM owns OpenShift lifecycle.
 
 ```text
 ocp-lab create path (MVP commands)
-  mini-mock hub create      → SNO + optional ACM
-  mini-mock cluster create  → 3 VMs + ACM CR / net assets
+  mock-me hub create      → SNO + optional ACM
+  mock-me cluster create  → 3 VMs + ACM CR / net assets
 ```
 
 ## Quick start (RHEL INFRA-HOST — intended UX)
@@ -47,7 +47,7 @@ ocp-lab create path (MVP commands)
 1. Commission **RHEL 9/10**, activate subscription (or bring your own packages / fork).
 2. Clone this repo on that host (BM or nested-virt VM).
 3. Run the **container runtime** with libvirt access; author in UI or CLI.
-4. **Deploy** — runtime applies the MockUp (VMs on that host). Long-term: Ansible playbooks in the same EE the UI signals; today: derive YAML + `mini-mock` commands / `--manual`.
+4. **Deploy** — runtime applies the MockUp (VMs on that host). Long-term: Ansible playbooks in the same EE the UI signals; today: derive YAML + `mock-me` commands / `--manual`.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the EE / Ansible / as-a-service adapter model.
 
@@ -59,25 +59,25 @@ cp config/hub.example.yaml hub.yaml
 cp config/cluster.example.yaml cluster.yaml
 
 make build
-./bin/mini-mock --manual hub create --config hub.yaml --skip-wait
+./bin/mock-me --manual hub create --config hub.yaml --skip-wait
 ```
 
 ## Quick start (UI — MockUp topology)
 
 Same pattern as etcd-synthetic-load / interview-me: Vue+Quasar SPA embedded in `serve`.
 
-**Prod (2026-prod-1):** https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org  
-(Argo app `mini-mock` → `mini-mock-system`; GHCR `ghcr.io/dasmlab/mini-mock`; HAProxy `CERT53`)
+**Prod (2026-prod-1):** https://mock-me.apps.2026-prod-1.ocp.dasmlab.org  
+(Argo app `mock-me` → `mock-me-system`; GHCR `ghcr.io/dasmlab/mock-me`; HAProxy `CERT53`)
 
 ```bash
 make build-all          # npm build UI → embed → go binary
-./bin/mini-mock serve --listen :8080 --data-dir ./data
+./bin/mock-me serve --listen :8080 --data-dir ./data
 # open http://localhost:8080
 ```
 
 Flow in the UI:
 
-1. **MockUps** — pick genre/style (ACM Multi-Cluster is the first working miniMock)
+1. **MockUps** — pick genre/style (ACM Multi-Cluster is the first working mock-me style)
 2. **Topology** — compose OCP-MGMT / ACM / OCP-DEPLOY (+ infra vHosts)
 3. **Wizard** — capture MVP-gap params
 4. **Derive** — write `data/mockups/<id>/out/*.yaml` for the CLI
@@ -87,8 +87,8 @@ SSO (optional): Keycloak realm `dasmlab` — see [docs/KEYCLOAK_SETUP.md](docs/K
 ### Container
 
 ```bash
-podman build -t mini-mock -f Containerfile .
-podman run --rm -v "$PWD/data:/data:Z" --env-file .env mini-mock --help
+podman build -t mock-me -f Containerfile .
+podman run --rm -v "$PWD/data:/data:Z" --env-file .env mock-me --help
 ```
 
 Libvirt/ISO attach still needs a host with KVM (or a future remote provider).
@@ -115,7 +115,7 @@ Do not default to 8 GiB nodes — that turns the exercise into operator failure 
 ## Repository layout
 
 ```text
-cmd/mini-mock/          cobra CLI (+ embedded static/)
+cmd/mock-me/          cobra CLI (+ embedded static/)
 web/                   Vue 3 + Quasar UI (MockUps / Topology / Wizard)
 internal/
   config/              hub + cluster YAML
@@ -154,7 +154,7 @@ MVP implements **libvirt**. Register more under `internal/provider/<name>`.
 
 | Target | What |
 |--------|------|
-| `make build` | `./bin/mini-mock` |
+| `make build` | `./bin/mock-me` |
 | `make build-all` | Vue UI embed + Go binary |
 | `make serve` | UI+API on :8080 |
 | `make test` | `go vet` + `go test` |

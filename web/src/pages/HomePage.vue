@@ -2,9 +2,9 @@
   <q-page padding>
     <div class="row items-end q-mb-md">
       <div class="col">
-        <div class="text-h4 q-mb-xs">mini-mock</div>
+        <div class="text-h4 q-mb-xs">mock-me</div>
         <p class="text-body2 text-grey-7 q-mb-none home-lead">
-          MockUp product canvases — today Cluster Management (mini-mock multi-cluster on one RHEL host).
+          MockUp product canvases — today Cluster Management (ACM Multi-Cluster on one RHEL host).
           Application and Infra genres are on the catalog roadmap.
         </p>
       </div>

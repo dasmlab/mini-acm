@@ -23,9 +23,9 @@
       <text x="44" y="54" class="t-host">SINGLE HOST MACHINE</text>
       <text x="260" y="54" class="t-muted">RHEL 10 · libvirt · nested guests</text>
 
-      <!-- mini-mock -->
+      <!-- mock-me -->
       <rect x="48" y="78" width="130" height="48" rx="8" fill="#0d47a1" />
-      <text x="113" y="107" text-anchor="middle" class="t-on-dark">mini-mock</text>
+      <text x="113" y="107" text-anchor="middle" class="t-on-dark">mock-me</text>
 
       <!-- Orchestration label + line to mgmt -->
       <path d="M178 95 H 520" stroke="#00838f" stroke-width="1.75" fill="none" marker-end="url(#arr-teal)" />

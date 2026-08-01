@@ -1,4 +1,4 @@
-# Keycloak SSO setup for mini-mock
+# Keycloak SSO setup for mock-me
 
 Same dasmlab realm pattern as interview-me.
 
@@ -9,43 +9,43 @@ Same dasmlab realm pattern as interview-me.
 | Keycloak URL | `https://keycloak.apps.2026-prod-1.ocp.dasmlab.org` |
 | Realm | `dasmlab` |
 | Issuer | `https://keycloak.apps.2026-prod-1.ocp.dasmlab.org/realms/dasmlab` |
-| App URL | `https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org` |
-| Client ID | `mini-mock` |
+| App URL | `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org` |
+| Client ID | `mock-me` |
 
 ## Create client
 
-1. Client type: OpenID Connect · Client ID: `mini-mock`
+1. Client type: OpenID Connect · Client ID: `mock-me`
 2. Client authentication: **ON** · Standard flow: ON
 3. Redirect URIs:
-   - `https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
+   - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
    - `https://*.apps.2026-prod-1.ocp.dasmlab.org/*`
    - `http://localhost:8080/api/v1/auth/callback`
-4. Client role: `admin` — assign to staff users (Filter by clients → mini-mock)
-5. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mini-mock"].roles` in the access token
+4. Client role: `admin` — assign to staff users (Filter by clients → mock-me)
+5. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mock-me"].roles` in the access token
 
 ## Env (serve / Deployment)
 
 ```bash
 KEYCLOAK_URL=https://keycloak.apps.2026-prod-1.ocp.dasmlab.org
 KEYCLOAK_REALM=dasmlab
-OIDC_CLIENT_ID=mini-mock
+OIDC_CLIENT_ID=mock-me
 OIDC_CLIENT_SECRET=<from Keycloak Credentials tab>
-APP_PUBLIC_URL=https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org
-OIDC_REDIRECT_URI=https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback
+APP_PUBLIC_URL=https://mock-me.apps.2026-prod-1.ocp.dasmlab.org
+OIDC_REDIRECT_URI=https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback
 # optional lab CA
 # OIDC_CA_FILE=/etc/oidc/ca.crt
 ```
 
 When these are unset, serve runs **open local/dev** (no login). With them set, APIs require the `admin` client role.
 
-Store the secret in K8s as `mini-mock-oidc` / key `client-secret` (do not commit).
+Store the secret in K8s as `mock-me-oidc` / key `client-secret` (do not commit).
 
 
 ## Prod wiring (2026-prod-1)
 
-- Namespace: `mini-mock-system`
-- Secret: `mini-mock-oidc` (key `client-secret`)
-- ConfigMap: `mini-mock-oidc-ca` (lab CA for Keycloak TLS)
-- Route: https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org (HAProxy **CERT55**)
+- Namespace: `mock-me-system`
+- Secret: `mock-me-oidc` (key `client-secret`)
+- ConfigMap: `mock-me-oidc-ca` (lab CA for Keycloak TLS)
+- Route: https://mock-me.apps.2026-prod-1.ocp.dasmlab.org (HAProxy **CERT55**)
 - Client role may be named `Admin` or `admin` (match is case-insensitive)
 - Without a session, `GET /api/v1/mockups` returns **401** when OIDC is enabled

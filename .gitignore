@@ -8,8 +8,8 @@
 /data/
 
 # Embedded UI build output is committed as placeholder; rebuilt by make web
-cmd/mini-mock/static/*
-!cmd/mini-mock/static/.gitkeep
+cmd/mock-me/static/*
+!cmd/mock-me/static/.gitkeep
 web/node_modules/
 web/dist/
 

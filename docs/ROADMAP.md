@@ -24,7 +24,7 @@ Infrastructure                        →   Node · Network · Payload (catalog 
 ```
 
 **Composable building blocks (Cluster Management):** `MachineHost` · `Adapter` · `VHost` · `Gateway`/`VyOS` · `OCP-MGMT` (SNO Hub) · `ACM` · `OCP-DEPLOY` · `Appliance`/`HAP`.
-Single SNO is the mgmt half alone (orchestrate adapter → one SNO). mini-mock layers ACM + managed deployments on the same objects.
+Single SNO is the mgmt half alone (orchestrate adapter → one SNO). mock-me layers ACM + managed deployments on the same objects.
 
 Catalog API: `GET /api/v1/catalog` (object types + allowed relations per style).
 Existing racks without fields normalize to `cluster-management` / `acm-multi-cluster`.
@@ -81,7 +81,7 @@ Later: persist genres as data (`data/genres/*.yaml`), “Add a Genre” UI that 
 - Free-form: no constrained relation edges by default; drop orphan **vHosts**, **HAProxy** / **other** appliances; hide rack pieces; **Validate** collects missing payload / mgmt / ACM / spoke errors in one pass.
 - **Not supported (stub):** promoting a free-form canvas into a guided/constrained MockUp — rebuild in Guided if you want derive/deploy. Track as later improvement.
 
-The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mini-mock’s container runtime talks to libvirt:
+The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mock-me’s container runtime talks to libvirt:
 
 ```text
 1. Commission RHEL 9/10 + activate subscription
@@ -108,7 +108,7 @@ UI → core is the same signal either way (MockUp id / derived artifacts / “de
 │  subscription · kvm · libvirt · podman                  │
 │                                                         │
 │   ┌─────────────────── EE / runtime ─────────────────┐  │
-│   │  mini-mock serve (UI+API)                         │  │
+│   │  mock-me serve (UI+API)                         │  │
 │   │  deploy job ──► Ansible playbooks                │  │
 │   │       · ensure libvirt net / pool                │  │
 │   │       · create hub + cluster VMs                 │  │
@@ -138,9 +138,9 @@ Go `provider/libvirt` remains useful as a thin driver *or* as what playbooks wra
 ## Next (near-term)
 
 0. **Inventory (MACHINE-HOST targets)** — DONE MVP: seed `dasm@192.168.1.142`, CRUD, SSH probe (auth + libvirt readiness). **Probe status:** red unreachable / yellow partial / green ready. **Fix this** remediates over SSH (install/start libvirt, install podman; optional sudo password). **Stretched toggle:** keep LAN IP on file; optional VPN address (seed `10.50.0.3`) for cluster→host when LAN is not routable — WireGuard install on the host is a manual/stretch step, not a full product feature yet. Orchestrate/deploy against a plan is next.
-0b. **MockUp genres/styles** — DONE: genre/style catalog; **ACM Multi-Cluster** (first working miniMock) + **Single SNO OCP**. Product rename **mini-acm → mini-mock**. Next: Windows/Web/Infra seed stubs; Validate from relation catalog; Add Genre YAML.
+0b. **MockUp genres/styles** — DONE: genre/style catalog; **ACM Multi-Cluster** (first working mock-me style) + **Single SNO OCP**. Product rename **mini-acm → mini-mock → mock-me**. Next: Windows/Web/Infra seed stubs; Validate from relation catalog; Add Genre YAML.
 0c. **EE / runner agent on target** — after podman Fix: pull slim Ansible EE image (SSH key injected from UI), run as host agent or cluster job for probe/orchestrate. Same image path as later AAP/EDA.
-0d. **Keycloak SSO** — DONE code (dasmlab realm, client `mini-mock`). Create Keycloak client + optional K8s secret `mini-mock-oidc` to enable in prod — see `docs/KEYCLOAK_SETUP.md`.
+0d. **Keycloak SSO** — DONE code (dasmlab realm, client `mock-me`). Create Keycloak client + optional K8s secret `mock-me-oidc` to enable in prod — see `docs/KEYCLOAK_SETUP.md`.
 1. **Host bootstrap doc + script** — RHEL 9/10: subscription, `libvirt`/`qemu-kvm`/`podman`, nested-virt note, socket permissions for the container.
 2. **Container ↔ libvirt** — documented `podman run` (volume `/var/run/libvirt`, device, or ssh+bastion); smoke via Inventory **Probe** + later `GET /api/v1/infra/health`.
 3. **Deploy signal** — `POST …/mockups/{id}/deploy` queues a job against linked Inventory host; MVP may call Ansible locally or shell out to existing `hub create` / `cluster create` behind a job status UX.

@@ -1,23 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mini-mock
+  name: mock-me
   namespace: openshift-gitops
   labels:
-    app.kubernetes.io/part-of: mini-mock
+    app.kubernetes.io/part-of: mock-me
     dasmlab.org/cluster: 2026-prod-1
 spec:
   project: default
   source:
     repoURL: git@github.com:lmcdasm/dasmlab-live-cicd.git
     targetRevision: main
-    path: clusters/2026-prod-1/mini-mock/live
+    path: clusters/2026-prod-1/mock-me/live
     directory:
       recurse: false
-      include: mini-mock-v*.yaml
+      include: mock-me-v*.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: mini-mock-system
+    namespace: mock-me-system
   syncPolicy:
     automated:
       prune: true

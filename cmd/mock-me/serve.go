@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dasmlab/mini-mock/internal/api"
-	"github.com/dasmlab/mini-mock/internal/auth"
-	"github.com/dasmlab/mini-mock/internal/inventory"
-	"github.com/dasmlab/mini-mock/internal/mockup"
+	"github.com/dasmlab/mock-me/internal/api"
+	"github.com/dasmlab/mock-me/internal/auth"
+	"github.com/dasmlab/mock-me/internal/inventory"
+	"github.com/dasmlab/mock-me/internal/mockup"
 )
 
 //go:embed all:static
@@ -29,7 +29,7 @@ func newServeCmd() *cobra.Command {
 		Short: "Start the web UI + MockUp API",
 		Long: `serve embeds the Vue UI and exposes /api/v1 for MockUp topology + wizard flows.
 
-  mini-mock serve --listen :8080 --data-dir ./data
+  mock-me serve --listen :8080 --data-dir ./data
 
 LAB / TEST / DEV ONLY.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -77,7 +77,7 @@ LAB / TEST / DEV ONLY.`,
 			}
 
 			srv := api.New(store, inv, authSvc, dataDir, version, staticHandler)
-			fmt.Fprintf(os.Stderr, "mini-mock UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
+			fmt.Fprintf(os.Stderr, "mock-me UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
 			return api.ListenAndServe(addr, srv.Handler())
 		},
 	}

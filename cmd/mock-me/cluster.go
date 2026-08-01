@@ -5,9 +5,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dasmlab/mini-mock/internal/cluster"
-	"github.com/dasmlab/mini-mock/internal/config"
-	"github.com/dasmlab/mini-mock/internal/provider"
+	"github.com/dasmlab/mock-me/internal/cluster"
+	"github.com/dasmlab/mock-me/internal/config"
+	"github.com/dasmlab/mock-me/internal/provider"
 )
 
 func newClusterCmd(gf *globalFlags) *cobra.Command {

@@ -1,52 +1,52 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mini-mock-sa
-  namespace: mini-mock-system
+  name: mock-me-sa
+  namespace: mock-me-system
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: system:openshift:scc:anyuid
-  namespace: mini-mock-system
+  namespace: mock-me-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:openshift:scc:anyuid
 subjects:
   - kind: ServiceAccount
-    name: mini-mock-sa
-    namespace: mini-mock-system
+    name: mock-me-sa
+    namespace: mock-me-system
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mini-mock
-  namespace: mini-mock-system
+  name: mock-me
+  namespace: mock-me-system
   labels:
-    app: mini-mock
-    app.kubernetes.io/name: mini-mock
+    app: mock-me
+    app.kubernetes.io/name: mock-me
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mini-mock
+      app: mock-me
   template:
     metadata:
       labels:
-        app: mini-mock
+        app: mock-me
     spec:
-      serviceAccountName: mini-mock-sa
+      serviceAccountName: mock-me-sa
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: dasmlab-ghcr-pull
       containers:
-        - name: mini-mock
-          image: ghcr.io/dasmlab/mini-mock:__VERSION__
+        - name: mock-me
+          image: ghcr.io/dasmlab/mock-me:__VERSION__
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -67,29 +67,29 @@ spec:
             - name: BUILD_VERSION
               value: "__VERSION__"
             - name: APP_PUBLIC_URL
-              value: "https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org"
+              value: "https://mock-me.apps.2026-prod-1.ocp.dasmlab.org"
             - name: KEYCLOAK_URL
               value: "https://keycloak.apps.2026-prod-1.ocp.dasmlab.org"
             - name: KEYCLOAK_REALM
               value: dasmlab
             - name: OIDC_CLIENT_ID
-              value: mini-mock
-            # Create secret mini-mock-oidc with key client-secret to enable SSO
+              value: mock-me
+            # Create secret mock-me-oidc with key client-secret to enable SSO
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: mini-mock-oidc
+                  name: mock-me-oidc
                   key: client-secret
                   optional: false
             - name: OIDC_REDIRECT_URI
-              value: "https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback"
+              value: "https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback"
             - name: OIDC_CA_FILE
               value: /etc/oidc/ca.crt
-            # Optional: oc create secret generic mini-mock-ssh --from-file=id_ecdsa=... -n mini-mock-system
+            # Optional: oc create secret generic mock-me-ssh --from-file=id_ecdsa=... -n mock-me-system
             - name: INVENTORY_SSH_KEY
               value: /var/run/inventory-ssh/id_ecdsa
           volumeMounts:
-            - name: mini-mock-data
+            - name: mock-me-data
               mountPath: /data
             - name: oidc-ca
               mountPath: /etc/oidc
@@ -121,19 +121,19 @@ spec:
               memory: "512Mi"
               cpu: "500m"
       volumes:
-        - name: mini-mock-data
+        - name: mock-me-data
           persistentVolumeClaim:
-            claimName: mini-mock-data
+            claimName: mock-me-data
         - name: oidc-ca
           configMap:
-            name: mini-mock-oidc-ca
+            name: mock-me-oidc-ca
             items:
               - key: ca.crt
                 path: ca.crt
             optional: true
         - name: inventory-ssh
           secret:
-            secretName: mini-mock-ssh
+            secretName: mock-me-ssh
             defaultMode: 0440
             optional: true
 
@@ -141,8 +141,8 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mini-mock-data
-  namespace: mini-mock-system
+  name: mock-me-data
+  namespace: mock-me-system
 spec:
   accessModes:
     - ReadWriteOnce
@@ -155,11 +155,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mini-mock
-  namespace: mini-mock-system
+  name: mock-me
+  namespace: mock-me-system
 spec:
   selector:
-    app: mini-mock
+    app: mock-me
   type: ClusterIP
   ports:
     - name: http
@@ -171,15 +171,15 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: mini-mock
-  namespace: mini-mock-system
+  name: mock-me
+  namespace: mock-me-system
   labels:
-    app: mini-mock
+    app: mock-me
 spec:
-  host: mini-mock.apps.2026-prod-1.ocp.dasmlab.org
+  host: mock-me.apps.2026-prod-1.ocp.dasmlab.org
   to:
     kind: Service
-    name: mini-mock
+    name: mock-me
     weight: 100
   port:
     targetPort: http

@@ -7,7 +7,7 @@
       <q-btn flat dense icon="refresh" label="Refresh" @click="load" />
     </div>
     <p class="text-body2 text-grey-7 q-mb-lg">
-      Product blueprints by genre — today <strong>Cluster Management → mini-mock</strong>;
+      Product blueprints by genre — today <strong>Cluster Management → ACM Multi-Cluster</strong>;
       Application / Infra styles are catalogued for later.
     </p>
 
@@ -17,7 +17,7 @@
 
     <q-banner v-else-if="error" class="bg-orange-1 text-orange-9 q-mb-lg" rounded>
       <template #avatar><q-icon name="cloud_off" color="orange-9" /></template>
-      Could not reach the API ({{ error }}). Run <code>mini-mock serve</code> on :8080.
+      Could not reach the API ({{ error }}). Run <code>mock-me serve</code> on :8080.
     </q-banner>
 
     <div v-else-if="mockups.length === 0" class="text-center text-grey-7 q-my-xl">
@@ -181,7 +181,7 @@ function styleLabel(m) {
   const genre = (catalog.value.genres || []).find((g) => g.id === (m.spec?.genre || 'cluster-management'))
   const style = (catalog.value.styles || []).find((s) => s.id === (m.spec?.style || 'acm-multi-cluster'))
   const g = genre?.label || m.spec?.genre || 'Cluster Management'
-  const st = style?.label || m.spec?.style || 'mini-mock'
+  const st = style?.label || m.spec?.style || 'ACM Multi-Cluster'
   return `${g} · ${st}`
 }
 

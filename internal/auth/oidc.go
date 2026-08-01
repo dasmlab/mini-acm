@@ -60,7 +60,7 @@ func ConfigFromEnv() Config {
 	}
 	cfg := Config{
 		Issuer:       issuer,
-		ClientID:     envOr("OIDC_CLIENT_ID", "mini-mock"),
+		ClientID:     envOr("OIDC_CLIENT_ID", "mock-me"),
 		ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
 		RedirectURL:  redirect,
 		AppPublicURL: appURL,
@@ -85,7 +85,7 @@ func httpClientForOIDC(caFile string) (*http.Client, error) {
 	if err != nil {
 		// Preview mounts mark the OIDC CA ConfigMap optional; fall back to system roots
 		// so a missing bootstrap does not brick the process after the pod finally starts.
-		fmt.Fprintf(os.Stderr, "mini-mock: OIDC CA file %q unavailable (%v); using system roots\n", caFile, err)
+		fmt.Fprintf(os.Stderr, "mock-me: OIDC CA file %q unavailable (%v); using system roots\n", caFile, err)
 		return http.DefaultClient, nil
 	}
 	pool, err := x509.SystemCertPool()
@@ -504,7 +504,7 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 	return s.AdminMiddleware(next)
 }
 
-// AdminMiddleware requires a Keycloak session with the mini-mock client role "admin".
+// AdminMiddleware requires a Keycloak session with the mock-me client role "admin".
 // When OIDC is disabled it allows all requests (local/dev mode).
 func (s *Service) AdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -520,7 +520,7 @@ func (s *Service) AdminMiddleware(next http.Handler) http.Handler {
 		if !user.IsAdmin {
 			writeJSON(w, http.StatusForbidden, map[string]string{
 				"error":  "forbidden",
-				"detail": "requires mini-mock client role: admin",
+				"detail": "requires mock-me client role: admin",
 			})
 			return
 		}
@@ -528,7 +528,7 @@ func (s *Service) AdminMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// IsAdmin reports whether the request has the mini-mock "admin" client role.
+// IsAdmin reports whether the request has the mock-me "admin" client role.
 // When OIDC is disabled, returns true. Pass w so tokens can be refreshed.
 func (s *Service) IsAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if !s.Enabled() {

@@ -81,7 +81,7 @@ cp config/hub.example.yaml hub.yaml
 # edit baseDomain / IPs / version to match your lab
 
 make build
-./bin/mini-mock --manual hub create --config hub.yaml --skip-wait --skip-acm
+./bin/mock-me --manual hub create --config hub.yaml --skip-wait --skip-acm
 # follow printed openshift-install + virsh steps until:
 #   export KUBECONFIG=./data/hub-hub/auth/kubeconfig
 #   oc get nodes
@@ -106,9 +106,9 @@ Applies (in order):
 | Needs | Hub kubeconfig (`--kubeconfig` or workDir `auth/kubeconfig`) |
 
 ```bash
-./bin/mini-mock hub install-acm --config hub.yaml --manual   # prints steps
+./bin/mock-me hub install-acm --config hub.yaml --manual   # prints steps
 # or:
-./bin/mini-mock hub install-acm --config hub.yaml
+./bin/mock-me hub install-acm --config hub.yaml
 oc get mch -n open-cluster-management -w   # wait for status Running / Available
 ```
 
@@ -166,7 +166,7 @@ Hive/ACM does **not** use one generic Cluster CRD for this path. MVP emits the s
 
 ```bash
 cp config/cluster.example.yaml cluster.yaml
-./bin/mini-mock --manual cluster create --config cluster.yaml
+./bin/mock-me --manual cluster create --config cluster.yaml
 
 # On provisioner: install generated haproxy + dnsmasq fragments (point VIPs at gateway host)
 
@@ -193,7 +193,7 @@ Attaches the **InfraEnv discovery ISO** to all three VMs and powers them on.
 That is what starts host discovery → Agent CRs → (approve/bind) → Assisted install.
 
 ```bash
-./bin/mini-mock cluster attach-iso --config cluster.yaml --iso ./discovery.iso
+./bin/mock-me cluster attach-iso --config cluster.yaml --iso ./discovery.iso
 # then on hub:
 oc get agents -n dev01 -w
 # approve / set role master as needed for your ACM version
@@ -219,7 +219,7 @@ oc get agentclusterinstall -n dev01 -o yaml   # watch conditions
 ## Destroy
 
 ```bash
-./bin/mini-mock cluster destroy --config cluster.yaml --yes
+./bin/mock-me cluster destroy --config cluster.yaml --yes
 # also: oc delete ns dev01  (or delete CRs) on hub
-./bin/mini-mock hub destroy --config hub.yaml --yes --purge
+./bin/mock-me hub destroy --config hub.yaml --yes --purge
 ```

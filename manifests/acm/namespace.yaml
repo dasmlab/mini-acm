@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: open-cluster-management
   labels:
-    mini-mock.dasmlab.org/managed: "true"
+    mock-me.dasmlab.org/managed: "true"

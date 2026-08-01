@@ -172,7 +172,7 @@ func Catalog() CatalogResponse {
 	genres := []GenreDef{
 		{
 			ID: GenreClusterManagement, Label: "Cluster Management",
-			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or mini-mock (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
+			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or mock-me (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
 			Styles: []string{StyleSingleSNOOCP, StyleACMMultiCluster},
 		},
 		{
@@ -206,7 +206,7 @@ func LookupStyle(id string) *StyleDef {
 	return nil
 }
 
-// ResolveCreateStyle picks genre/style for Create, defaulting to mini-mock.
+// ResolveCreateStyle picks genre/style for Create, defaulting to mock-me.
 func ResolveCreateStyle(genre, style string) (g, st string, def *StyleDef, err error) {
 	if style == "" {
 		style = StyleACMMultiCluster
