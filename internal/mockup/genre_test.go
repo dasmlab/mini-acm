@@ -22,6 +22,13 @@ func TestCatalogHasMiniACM(t *testing.T) {
 	if win == nil || win.Available {
 		t.Fatal("windows-ui should exist as unavailable stub")
 	}
+	cdn := LookupStyle(StyleSurfingCdnR2)
+	if cdn == nil || cdn.Available {
+		t.Fatal("surfing-cdn-r2 should exist as unavailable stub")
+	}
+	if cdn.Genre != GenreContentDelivery {
+		t.Fatalf("cdn genre: %s", cdn.Genre)
+	}
 }
 
 func TestResolveCreateStyle(t *testing.T) {

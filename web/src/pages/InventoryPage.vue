@@ -258,7 +258,7 @@ function statusIcon(s) {
 }
 
 function hasFixable(h) {
-  return (h.issues || []).some((i) => i.fixable) || h.status === 'partial'
+  return (h.issues || []).some((i) => i.fixable && i.severity !== 'warn')
 }
 
 async function load() {

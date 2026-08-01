@@ -8,12 +8,14 @@ const (
 	GenreClusterManagement       = "cluster-management"
 	GenreApplicationDevelopment  = "application-development"
 	GenreInfrastructure          = "infrastructure"
+	GenreContentDelivery         = "content-delivery"
 
 	StyleACMMultiCluster = "acm-multi-cluster"
 	StyleSingleSNOOCP        = "single-sno-ocp"
 	StyleWindowsUI           = "windows-ui"
 	StyleWebFullStack        = "web-full-stack"
 	StyleInfraNodeNetwork    = "infra-node-network-payload"
+	StyleSurfingCdnR2        = "surfing-cdn-r2"
 )
 
 // RelationRule constrains how object types may connect (validate / palette later).
@@ -144,6 +146,27 @@ func Catalog() CatalogResponse {
 				{From: "Payload", Rel: "runsOn", To: "VHost", Cardinality: "0..*"},
 			},
 		},
+		{
+			ID: StyleSurfingCdnR2, Genre: GenreContentDelivery,
+			Label: "Surfing CDN · R2 + Cloudflare",
+			Description: "Mock a CDN network: DC Bound origin house (thin up / Surfing API) → Cloudflare edge → optional R2 object store + DAM. Profile cost to cheapcloud ($20/mo storage+CDN envelope). Production twin: dasmlab_home surfing-service.",
+			Available: false,
+			ObjectTypes: []string{
+				"SourceHouse", "OriginApp", "EdgeCDN", "ObjectStore", "DAM", "MediaRoute", "CostProfile",
+			},
+			Views:       []string{"all", "origin", "edge", "storage", "cost"},
+			DefaultSeed: "stub — Bound origin → CF CDN → optional R2 (not seeded yet)",
+			Relations: []RelationRule{
+				{From: "OriginApp", Rel: "runsOn", To: "SourceHouse", Cardinality: "1..1", Notes: "OCP Surfing / thin-up in Bound DC"},
+				{From: "OriginApp", Rel: "publishesTo", To: "ObjectStore", Cardinality: "0..1", Notes: "optional cloud origin for bytes"},
+				{From: "EdgeCDN", Rel: "pullsFrom", To: "ObjectStore", Cardinality: "0..1"},
+				{From: "EdgeCDN", Rel: "pullsFrom", To: "OriginApp", Cardinality: "0..1", Notes: "pull-through when no object store"},
+				{From: "MediaRoute", Rel: "terminatesAt", To: "EdgeCDN", Cardinality: "1..1"},
+				{From: "DAM", Rel: "indexes", To: "ObjectStore", Cardinality: "0..1"},
+				{From: "CostProfile", Rel: "constrains", To: "ObjectStore", Cardinality: "0..1", Notes: "cheapcloud MediaBroker envelope"},
+				{From: "CostProfile", Rel: "constrains", To: "EdgeCDN", Cardinality: "0..1"},
+			},
+		},
 	}
 
 	genres := []GenreDef{
@@ -161,6 +184,11 @@ func Catalog() CatalogResponse {
 			ID: GenreInfrastructure, Label: "Infrastructure",
 			Description: "Hosts, networks, and payloads without a cluster-management control plane.",
 			Styles: []string{StyleInfraNodeNetwork},
+		},
+		{
+			ID: GenreContentDelivery, Label: "Content Delivery",
+			Description: "CDN / origin / object-store MockUps (Surfing pattern). Profile into cheapcloud for cheapest live path under budget.",
+			Styles: []string{StyleSurfingCdnR2},
 		},
 	}
 
