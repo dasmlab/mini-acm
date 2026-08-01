@@ -71,11 +71,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { enumerateVHosts, enumerateAppliances } from 'src/lib/vhosts'
+import { enumerateNetwork } from 'src/lib/network'
 
 const props = defineProps({
   mockup: { type: Object, required: true },
   selectedId: { type: String, default: null },
-  /** all | infra | cluster | app */
+  /** all | infra | network | cluster | app */
   layer: { type: String, default: 'all' },
   /** free-form: no constrained edges unless showRelations */
   freeForm: { type: Boolean, default: false },
@@ -83,18 +84,19 @@ const props = defineProps({
 const emit = defineEmits(['select', 'move'])
 
 const vbW = 960
-const vbH = 640
+const vbH = 680
 const dragging = ref(null)
 const moved = ref(false)
 
 /**
  * Infra = host + adapter + guest vHosts (+ VyOS NF on the GW vHost).
+ * Network = vSwitch + vNICs + PRI-PHY-NIC (WAN/LAN).
  * Cluster = OCP objects + ACM governance.
  * App = ACM payload only.
- * Full rack = both bands (GW/vSwitch story lives with infra vHosts).
  */
 const VIEW_KINDS = {
   infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway', 'appliance']),
+  network: new Set(['infraHost', 'phyNic', 'vswitch', 'vnic']),
   cluster: new Set(['hub', 'cluster', 'acm']),
   app: new Set(['acm']),
 }
@@ -106,7 +108,10 @@ const showRelations = computed(() => {
 
 const bands = computed(() => {
   if (props.layer === 'infra') {
-    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: props.freeForm ? 'FREE-FORM · drop vHosts / appliances' : 'INFRASTRUCTURE · host · adapter · vHosts · VyOS on GW vHost' }]
+    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: props.freeForm ? 'FREE-FORM · drop vHosts / appliances' : 'INFRASTRUCTURE · host · adapter · vHosts (incl. GW) · VyOS on vHost-GW' }]
+  }
+  if (props.layer === 'network') {
+    return [{ id: 'network', y: 0, h: vbH, fill: '#fff3e0', label: 'NETWORK · PRI-PHY-NIC · VyOS WAN/LAN · vSwitch · guest vNICs' }]
   }
   if (props.layer === 'cluster') {
     return [{ id: 'cluster', y: 0, h: vbH, fill: '#e3f2fd', label: 'CLUSTER MGMT · ACM on home · governs deployments' }]
@@ -115,9 +120,9 @@ const bands = computed(() => {
     return [{ id: 'app', y: 0, h: vbH, fill: '#e0f2f1', label: 'APPLICATION · ACM payload (others later)' }]
   }
   return [
-    { id: 'app', y: 0, h: 120, fill: '#e0f2f1', label: 'APP · ACM payload' },
-    { id: 'cluster', y: 120, h: 160, fill: '#e3f2fd', label: 'CLUSTER · OCP (mgmt + deployments)' },
-    { id: 'infra', y: 280, h: 360, fill: '#eceff1', label: props.freeForm ? 'INFRA · free-form (relations optional)' : 'INFRA · host · adapter · vHosts · VyOS (RTR) on GW vHost' },
+    { id: 'app', y: 0, h: 100, fill: '#e0f2f1', label: 'APP · ACM payload' },
+    { id: 'cluster', y: 100, h: 140, fill: '#e3f2fd', label: 'CLUSTER · OCP (mgmt + deployments)' },
+    { id: 'infra', y: 240, h: 440, fill: '#eceff1', label: props.freeForm ? 'INFRA · free-form' : 'INFRA · host · adapter · vHosts · VyOS on GW' },
   ]
 })
 
@@ -127,26 +132,35 @@ const pos = (id, fallback) => {
 }
 
 function inView(kind) {
-  if (props.layer === 'all') return true
+  if (props.layer === 'all') {
+    // Full rack stays high-level — detailed NICs live in Network tab
+    return !['phyNic', 'vswitch', 'vnic'].includes(kind)
+  }
   return VIEW_KINDS[props.layer]?.has(kind) === true
 }
 
 const allNodes = computed(() => {
   const m = props.mockup
   if (!m?.spec) return []
+  const L = props.layer
+
+  // Dedicated Network layer layout
+  if (L === 'network') {
+    return layoutNetworkNodes(m)
+  }
+
   const out = []
   const provider = m.spec.provider || 'libvirt'
-  const L = props.layer
   const showInfraStuff = L === 'all' || L === 'infra'
   const showClusterStuff = L === 'all' || L === 'cluster'
   const showAppStuff = L === 'all' || L === 'app' || L === 'cluster'
 
-  const yHost = L === 'infra' ? 560 : 580
-  const yAdapter = L === 'infra' ? 460 : 500
-  const yVHost = L === 'infra' ? 300 : 380
-  const yVyOS = L === 'infra' ? 210 : 300
-  const yOCP = L === 'cluster' ? 280 : 200
-  const yACM = L === 'app' || L === 'cluster' ? 120 : 70
+  const yHost = L === 'infra' ? 580 : 600
+  const yAdapter = L === 'infra' ? 480 : 520
+  const yVHost = L === 'infra' ? 320 : 400
+  const yVyOS = L === 'infra' ? 220 : 310
+  const yOCP = L === 'cluster' ? 280 : 180
+  const yACM = L === 'app' || L === 'cluster' ? 120 : 55
 
   if (showInfraStuff) {
     const canvas = m.spec.canvas || {}
@@ -172,8 +186,8 @@ const allNodes = computed(() => {
     }
 
     const vhosts = enumerateVHosts(m)
-    const spacing = Math.min(108, Math.floor((vbW - 80) / Math.max(vhosts.length, 1)))
-    const startX = Math.max(70, (vbW - (vhosts.length - 1) * spacing) / 2)
+    const spacing = Math.min(100, Math.floor((vbW - 60) / Math.max(vhosts.length, 1)))
+    const startX = Math.max(60, (vbW - (vhosts.length - 1) * spacing) / 2)
     vhosts.forEach((vh, i) => {
       const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === vh.id)
       const fallback = orphan?.x
@@ -188,15 +202,14 @@ const allNodes = computed(() => {
         parentId: vh.parentId,
         label: vh.label,
         sub: vh.sub,
-        x: p.x, y: p.y, w: 96, h: 52, rx: 8, cls: 'fill-vhost',
+        x: p.x, y: p.y, w: 92, h: 50, rx: 8, cls: 'fill-vhost',
       })
     })
 
-    // Appliances / NFs sitting on vHosts (VyOS + free-form HAP/other)
     enumerateAppliances(m).forEach((apn, i) => {
       const under = out.find((n) => n.id === apn.runsOn)
       const fallback = under
-        ? { x: under.x, y: under.y - 70 }
+        ? { x: under.x, y: under.y - 68 }
         : { x: 200 + i * 120, y: yVyOS }
       const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === apn.id)
       const p = orphan?.x ? { x: orphan.x, y: orphan.y } : pos(apn.id, fallback)
@@ -205,9 +218,9 @@ const allNodes = computed(() => {
         id: apn.id,
         kind: apn.kind === 'gateway' ? 'gateway' : 'appliance',
         label: apn.label,
-        sub: apn.applianceType || 'appliance',
+        sub: apn.applianceType === 'vyos' ? 'RTR on vHost-GW' : (apn.applianceType || 'appliance'),
         runsOn: apn.runsOn,
-        x, y: p.y, w: 120, h: 48, rx: 10,
+        x, y: p.y, w: 120, h: 46, rx: 10,
         cls: apn.applianceType === 'haproxy' ? 'fill-hap' : (apn.kind === 'gateway' ? 'fill-gateway' : 'fill-appliance'),
       })
     })
@@ -221,17 +234,18 @@ const allNodes = computed(() => {
       out.push({
         id: hub.id, kind: 'hub',
         label: hub.label || 'MGMT-CLUSTER',
-        sub: 'home · hosts ACM',
-        x: hp.x, y: hp.y, w: 188, h: 52, rx: 12, cls: 'fill-hub',
+        sub: 'home · 1× SNO · hosts ACM',
+        x: hp.x, y: hp.y, w: 200, h: 52, rx: 12, cls: 'fill-hub',
       })
     }
     ;(m.spec.clusters || []).forEach((c, i) => {
+      const n = Math.max(1, Number(c.count) || 3)
       const cp = pos(c.id, { x: 560 + (i % 2) * 30, y: yOCP - 20 + i * 70 })
       out.push({
         id: c.id, kind: 'cluster',
         label: c.label || c.name,
-        sub: 'managed OCP',
-        x: cp.x, y: cp.y, w: 200, h: 52, rx: 12, cls: 'fill-cluster',
+        sub: `managed · ${n}× cp/worker VMs`,
+        x: cp.x, y: cp.y, w: 210, h: 52, rx: 12, cls: 'fill-cluster',
         clusterIndex: i,
       })
     })
@@ -254,19 +268,115 @@ const allNodes = computed(() => {
   return out
 })
 
+function layoutNetworkNodes(m) {
+  const { nodes: net } = enumerateNetwork(m)
+  const out = []
+  const guestVnics = net.filter((n) => n.kind === 'vnic' && n.role === 'guest')
+  const spacing = Math.min(115, Math.floor((vbW - 80) / Math.max(guestVnics.length + 2, 1)))
+
+  // Bottom: host + PRI-PHY-NIC
+  const host = net.find((n) => n.kind === 'infraHost')
+  if (host) {
+    const p = pos(host.id, { x: 140, y: 600 })
+    out.push({ ...host, x: p.x, y: p.y, rx: 8, w: host.w || 180, h: host.h || 48 })
+  }
+  const phy = net.find((n) => n.kind === 'phyNic')
+  if (phy) {
+    const p = pos(phy.id, { x: 340, y: 600 })
+    out.push({ ...phy, x: p.x, y: p.y, rx: 6, w: phy.w || 130, h: phy.h || 44 })
+  }
+
+  // Middle-low: VyOS WAN
+  const wan = net.find((n) => n.id === 'vnic-gw-wan')
+  if (wan) {
+    const p = pos(wan.id, { x: 340, y: 480 })
+    out.push({ ...wan, x: p.x, y: p.y, rx: 6, w: wan.w || 110, h: wan.h || 42 })
+  }
+
+  // Middle: vSwitch bar
+  const vs = net.find((n) => n.kind === 'vswitch')
+  if (vs) {
+    const p = pos(vs.id, { x: 480, y: 340 })
+    out.push({ ...vs, x: p.x, y: p.y, rx: 8, w: Math.min(280, 160 + guestVnics.length * 20), h: vs.h || 52 })
+  }
+
+  // Middle-high: VyOS LAN (.1 GW)
+  const lan = net.find((n) => n.id === 'vnic-gw-lan')
+  if (lan) {
+    const p = pos(lan.id, { x: 160, y: 220 })
+    out.push({ ...lan, x: p.x, y: p.y, rx: 6, w: lan.w || 110, h: lan.h || 42 })
+  }
+
+  // Top: guest vNICs
+  const startX = 280
+  guestVnics.forEach((vn, i) => {
+    const p = pos(vn.id, { x: startX + i * spacing, y: 140 })
+    out.push({ ...vn, x: p.x, y: p.y, rx: 6, w: vn.w || 118, h: vn.h || 42 })
+  })
+
+  return out
+}
+
 const nodes = computed(() => allNodes.value.filter((n) => inView(n.kind)))
 
 const edges = computed(() => {
-  if (!showRelations.value) return []
+  if (!showRelations.value && props.layer !== 'network') return []
 
   const byId = Object.fromEntries(nodes.value.map((n) => [n.id, n]))
+  const out = []
+  const L = props.layer
+
+  if (L === 'network') {
+    const phy = byId['phy-pri']
+    const host = byId[props.mockup?.spec?.infraHost?.id]
+    const wan = byId['vnic-gw-wan']
+    const lan = byId['vnic-gw-lan']
+    const vs = byId.vswitch
+    if (host && phy) {
+      out.push({
+        id: 'host-phy',
+        d: curve(host.x + 80, host.y, phy.x - 60, phy.y),
+        stroke: '#37474f', width: 2, dash: null, marker: 'url(#arrow-host)',
+      })
+    }
+    if (phy && wan) {
+      out.push({
+        id: 'phy-wan',
+        d: curve(phy.x, phy.y - 22, wan.x, wan.y + 22),
+        stroke: '#e65100', width: 2.25, dash: null, marker: 'url(#arrow)',
+      })
+    }
+    if (wan && lan) {
+      // both on same VyOS box conceptually
+      out.push({
+        id: 'wan-lan-rtr',
+        d: curve(wan.x - 40, wan.y - 10, lan.x + 20, lan.y + 20),
+        stroke: '#c62828', width: 1.5, dash: '4 3', marker: null,
+      })
+    }
+    if (lan && vs) {
+      out.push({
+        id: 'lan-vswitch',
+        d: curve(lan.x + 40, lan.y + 20, vs.x - 80, vs.y - 10),
+        stroke: '#ef6c00', width: 2, dash: null, marker: 'url(#arrow)',
+      })
+    }
+    nodes.value.filter((n) => n.kind === 'vnic' && n.role === 'guest').forEach((vn) => {
+      if (!vs) return
+      out.push({
+        id: `vs-${vn.id}`,
+        d: curve(vs.x, vs.y - 26, vn.x, vn.y + 22),
+        stroke: '#fb8c00', width: 1.5, dash: '5 3', marker: 'url(#arrow)',
+      })
+    })
+    return out
+  }
+
   const infra = byId[props.mockup?.spec?.infraHost?.id]
   const adapter = byId.adapter
   const gwVHost = byId['vhost-gw']
   const hub = byId[props.mockup?.spec?.hub?.id]
   const acm = byId[props.mockup?.spec?.acm?.id]
-  const out = []
-  const L = props.layer
 
   if (L === 'all' || L === 'infra') {
     if (infra && adapter) {
@@ -361,11 +471,11 @@ function onClick(n) {
   border-radius: 8px;
   background: #fafbfd;
   overflow: hidden;
-  min-height: 600px;
+  min-height: 640px;
 }
 .topo-svg {
   width: 100%;
-  height: 600px;
+  height: 640px;
   display: block;
   cursor: grab;
 }
@@ -380,6 +490,11 @@ function onClick(n) {
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }
+.fill-vswitch { fill: #ef6c00; }
+.fill-phy { fill: #455a64; }
+.fill-vnic { fill: #ffa726; }
+.fill-vnic-wan { fill: #e65100; }
+.fill-vnic-lan { fill: #fb8c00; }
 .band-label {
   fill: #90a4ae;
   font-size: 10px;

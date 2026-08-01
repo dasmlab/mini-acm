@@ -29,12 +29,13 @@ Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
 
 | View | Shows | Point |
 |------|-------|--------|
-| **Infrastructure** | MACHINE-HOST → ADAPTER → **vHosts** · **VyOS** stacked on GW vHost | Adapter provisions guests: 1× GW, 1× MGMT (SNO), `count`× per deployment (default 3). VyOS is the RTR/NF **payload** on the GW vHost (not a peer of the host). |
+| **Infrastructure** | MACHINE-HOST → ADAPTER → **vHosts** · **VyOS** on GW vHost | Guests: 1× GW, 1× MGMT (SNO), **3× cp/worker** per deployment. |
+| **Network** | PRI-PHY-NIC · VyOS eth0 WAN / eth1 LAN (.1) · **vSwitch** · guest vNICs | Adapter’s libvirt LAN picture; WAN ties RTR to host primary NIC. |
 | **Cluster mgmt** | ACM + home mgmt OCP + managed deployments | OCP objects. ACM lives on mgmt; governs spokes. Not full self-mgmt yet. |
 | **Application** | ACM | Payload today; Ansible / GitOps / test apps can land on clusters later. |
-| **Full rack** | All bands | Infra vHosts below · OCP + ACM above. |
+| **Full rack** | High-level bands | Detailed NICs live in Network tab. |
 
-**Later:** HAProxy on the cluster path; ACM self-management / sovereign; first-class editable vHost inventory (today vHosts are derived from gateway/hub/`clusters[].count`).
+**Later:** HAProxy on the cluster path; **arbiter** topology (2cp+worker + tiny arbiter vHost/stack); ACM self-management / sovereign; free-form → guided promote.
 
 ### Free-form / creative canvas (teaching)
 

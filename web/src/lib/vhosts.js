@@ -10,7 +10,7 @@ export function enumerateVHosts(m) {
       parentKind: 'gateway',
       parentId: m.spec.gateway.id,
       label: 'vHost-GW',
-      sub: 'RTR guest',
+      sub: '1× RTR guest',
     })
   }
   if (m.spec.hub?.id && !canvas.omitHub) {
@@ -20,7 +20,7 @@ export function enumerateVHosts(m) {
       parentKind: 'hub',
       parentId: m.spec.hub.id,
       label: 'vHost-MGMT',
-      sub: 'OCP SNO guest',
+      sub: '1× SNO · OCP',
     })
   }
   ;(m.spec.clusters || []).forEach((c, ci) => {
@@ -33,7 +33,7 @@ export function enumerateVHosts(m) {
         parentKind: 'cluster',
         parentId: c.id,
         label: `vHost-${short}-${i}`,
-        sub: `${c.label || c.name} guest`,
+        sub: `cp/worker · ${i + 1}/${n}`,
         clusterIndex: ci,
         nodeIndex: i,
       })

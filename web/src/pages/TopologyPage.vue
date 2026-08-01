@@ -64,6 +64,13 @@
                 <q-item-label caption>Generic NF / middleware on a vHost</q-item-label>
               </q-item-section>
             </q-item>
+            <q-item disable>
+              <q-item-section avatar><q-icon name="device_hub" color="grey" /></q-item-section>
+              <q-item-section>
+                <q-item-label>Arbiter (2cp+worker)</q-item-label>
+                <q-item-label caption>Later — tiny vHost + stack between control planes</q-item-label>
+              </q-item-section>
+            </q-item>
             <q-separator />
             <q-item-label header>Show / hide rack pieces</q-item-label>
             <q-item clickable v-close-popup @click="toggleOmit('omitHub')">
@@ -148,6 +155,9 @@
         <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-host" /> Host / adapter</span>
         <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-vhost" /> vHost</span>
         <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-gw" /> VyOS (RTR)</span>
+        <span v-if="layer === 'network'" class="legend-item"><i class="swatch swatch-phy" /> PRI-PHY-NIC</span>
+        <span v-if="layer === 'network'" class="legend-item"><i class="swatch swatch-vswitch" /> vSwitch</span>
+        <span v-if="layer === 'network'" class="legend-item"><i class="swatch swatch-vnic" /> vNIC</span>
         <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt OCP</span>
         <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-dep" /> Deployment OCP</span>
         <span v-if="layer === 'all' || layer === 'cluster' || layer === 'app'" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
@@ -306,6 +316,7 @@ import {
   getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
+import { enumerateNetwork } from 'src/lib/network'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -327,15 +338,19 @@ let layoutTimer = null
 const isFreeForm = computed(() => canvasMode.value === 'freeform')
 
 const layerOptions = [
-  { id: 'all', title: 'Full rack', sub: 'All bands' },
+  { id: 'all', title: 'Full rack', sub: 'High-level bands' },
   { id: 'infra', title: 'Infrastructure', sub: 'Host · adapter · vHosts' },
+  { id: 'network', title: 'Network', sub: 'vSwitch · vNICs · PRI-PHY' },
   { id: 'cluster', title: 'Cluster mgmt', sub: 'ACM · home + managed' },
   { id: 'app', title: 'Application', sub: 'ACM payload' },
 ]
 
 const layerHint = computed(() => {
   if (layer.value === 'infra') {
-    return 'Adapter provisions vHosts · VyOS (RTR) runs on the GW vHost'
+    return 'Adapter → vHosts (GW + MGMT SNO + 3× per deployment) · VyOS on vHost-GW'
+  }
+  if (layer.value === 'network') {
+    return 'PRI-PHY-NIC ↔ VyOS eth0 WAN · eth1 LAN (.1) + guest vNICs ↔ vSwitch'
   }
   if (layer.value === 'cluster') {
     return 'OCP objects — ACM on mgmt governs deployments (not full self-mgmt yet)'
@@ -343,12 +358,13 @@ const layerHint = computed(() => {
   if (layer.value === 'app') {
     return 'ACM today · Ansible / GitOps payloads can land on clusters later'
   }
-  return 'Infra vHosts below · OCP + ACM above'
+  return 'Use Network tab for vNICs · Infra for machines'
 })
 
 /** Object-list filters per view. Infra lists vHosts (not OCP cluster boxes). */
 const LAYER_ROWS = {
   infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway', 'appliance']),
+  network: new Set(['infraHost', 'phyNic', 'vswitch', 'vnic']),
   cluster: new Set(['hub', 'cluster', 'acm']),
   app: new Set(['acm']),
 }
@@ -368,6 +384,19 @@ const objectRows = computed(() => {
   const L = layer.value
   const canvas = m.spec.canvas || {}
   const rows = []
+
+  if (L === 'network') {
+    const { nodes: net } = enumerateNetwork(m)
+    for (const n of net) {
+      rows.push({
+        id: n.id,
+        kind: n.kind,
+        title: n.label,
+        sub: n.sub,
+      })
+    }
+    if (L === 'network') return rows
+  }
 
   if (L === 'infra' || L === 'all') {
     const ih = m.spec.infraHost
@@ -471,6 +500,10 @@ const selectedNodeData = computed(() => {
     const o = (mockup.value.spec.canvas?.orphans || []).find((x) => x.id === selected.value.id)
     return o || null
   }
+  if (k === 'phyNic' || k === 'vswitch' || k === 'vnic') {
+    const { nodes: net } = enumerateNetwork(mockup.value)
+    return net.find((x) => x.id === selected.value.id) || null
+  }
   if (k === 'infraHost') return mockup.value.spec.infraHost
   if (k === 'gateway') return mockup.value.spec.gateway
   if (k === 'hub') return mockup.value.spec.hub
@@ -531,6 +564,40 @@ const selectedMeta = computed(() => {
         { k: 'Type', v: d.applianceType || 'other' },
         { k: 'Runs on', v: d.runsOn || '—' },
       ],
+    }
+  }
+  if (n.kind === 'phyNic') {
+    return {
+      classLabel: 'Physical NIC',
+      title: d.label || 'PRI-PHY-NIC',
+      roleLine: 'Role: primary bridged uplink on MACHINE-HOST',
+      acmLine: 'WAN side of VyOS eth0 attaches here',
+      editable: false,
+      facts: Object.entries(d.facts || {}).map(([k, v]) => ({ k, v: String(v) })),
+    }
+  }
+  if (n.kind === 'vswitch') {
+    return {
+      classLabel: 'Lab vSwitch',
+      title: d.label,
+      roleLine: 'Role: libvirt LAN — guest vNICs + VyOS eth1',
+      acmLine: `Gateway ${d.facts?.gateway || '—'} is .1 on this CIDR`,
+      editable: false,
+      facts: Object.entries(d.facts || {}).map(([k, v]) => ({ k, v: String(v) })),
+    }
+  }
+  if (n.kind === 'vnic') {
+    return {
+      classLabel: 'Virtual NIC',
+      title: d.label,
+      roleLine: d.role === 'wan'
+        ? 'Role: VyOS WAN — uplinks to PRI-PHY-NIC'
+        : d.role === 'lan'
+          ? 'Role: VyOS LAN — GW (.1) for the lab CIDR'
+          : 'Role: guest NIC on the lab vSwitch',
+      acmLine: d.ip ? `IP ${d.ip}` : (d.sub || ''),
+      editable: false,
+      facts: Object.entries(d.facts || {}).map(([k, v]) => ({ k, v: String(v) })),
     }
   }
   if (n.kind === 'infraHost') {
@@ -885,16 +952,19 @@ onMounted(load)
 .swatch-host { background: #37474f; }
 .swatch-vhost { background: #78909c; }
 .swatch-gw { background: #c62828; }
+.swatch-phy { background: #455a64; }
+.swatch-vswitch { background: #ef6c00; }
+.swatch-vnic { background: #ffa726; }
 .swatch-mgmt { background: #1a237e; }
 .swatch-dep { background: #1565c0; }
 .swatch-acm { background: #00838f; }
 
 .layer-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 0.5rem;
 }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .layer-bar { grid-template-columns: 1fr 1fr; }
 }
 .layer-tab {
@@ -1046,6 +1116,9 @@ onMounted(load)
 .dot-adapter { background: #546e7a; }
 .dot-appliance { background: #6d4c41; }
 .dot-vhost { background: #78909c; }
+.dot-phyNic { background: #455a64; }
+.dot-vswitch { background: #ef6c00; }
+.dot-vnic { background: #ffa726; }
 .dot-gateway { background: #c62828; }
 .dot-hub { background: #1a237e; }
 .dot-acm { background: #00838f; }
