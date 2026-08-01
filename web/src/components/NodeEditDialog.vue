@@ -95,6 +95,7 @@
         <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
       </q-card-section>
 
+      <q-card-section v-else-if="kind === 'hub'">
         <q-banner dense rounded class="bg-blue-1 text-primary q-mb-md">
           <strong>Mgmt cluster (v)Host</strong> — guest that <em>runs</em> ACM.
         </q-banner>
