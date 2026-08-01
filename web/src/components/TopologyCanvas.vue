@@ -90,14 +90,11 @@ const nodes = computed(() => {
   const infra = m.spec.infraHost
   if (infra?.id) {
     const ip = pos(infra.id, { x: 120, y: 500 })
-    const kind = infra.kind === 'nested-vm' ? (infra.hypervisor || 'nested') : 'BM'
-    const disks = (infra.disks || []).length
-    const nics = (infra.nics || []).length
     out.push({
       id: infra.id,
       kind: 'infraHost',
       label: infra.label || 'MACHINE-HOST',
-      sub: `${infra.os || 'rhel'} · ${kind} · ${disks}d/${nics}n`,
+      sub: 'host · libvirt',
       x: ip.x, y: ip.y, w: 210, h: 64, rx: 8, cls: 'fill-infra',
     })
   }
@@ -109,7 +106,7 @@ const nodes = computed(() => {
       id: gw.id,
       kind: 'gateway',
       label: gw.label || 'VYOS-GW',
-      sub: `WAN↔LAN · ${gw.lanCIDR || 'lab'}`,
+      sub: `edge · ${gw.lanCIDR || 'LAN'}`,
       x: gp.x, y: gp.y, w: 160, h: 60, rx: 10, cls: 'fill-gateway',
     })
   }
@@ -120,8 +117,8 @@ const nodes = computed(() => {
     id: hub.id,
     kind: 'hub',
     label: hub.label || 'MGMT-CLUSTER',
-    sub: `${hub.cpu}c / ${Math.round(hub.memoryMiB / 1024)}G`,
-    x: hp.x, y: hp.y, w: 168, h: 60, rx: 12, cls: 'fill-hub',
+    sub: `runs ACM · ${hub.cpu}c/${Math.round(hub.memoryMiB / 1024)}G`,
+    x: hp.x, y: hp.y, w: 188, h: 60, rx: 12, cls: 'fill-hub',
   })
 
   const acm = m.spec.acm
@@ -130,7 +127,7 @@ const nodes = computed(() => {
     id: acm.id,
     kind: 'acm',
     label: acm.label || 'ACM',
-    sub: acm.enabled ? 'enabled' : 'disabled',
+    sub: acm.enabled ? 'governs' : 'off',
     x: ap.x, y: ap.y, w: 120, h: 60, rx: 12, cls: 'fill-acm',
   })
 
@@ -140,8 +137,8 @@ const nodes = computed(() => {
       id: c.id,
       kind: 'cluster',
       label: c.label || c.name,
-      sub: `${c.count}× ${c.cpu}c/${Math.round(c.memoryMiB / 1024)}G · ${c.phase || 'planned'}`,
-      x: cp.x, y: cp.y, w: 200, h: 60, rx: 12, cls: 'fill-cluster',
+      sub: `managed · ${c.count}×${c.cpu}c · ${c.phase || 'planned'}`,
+      x: cp.x, y: cp.y, w: 210, h: 60, rx: 12, cls: 'fill-cluster',
       clusterIndex: i,
     })
   })

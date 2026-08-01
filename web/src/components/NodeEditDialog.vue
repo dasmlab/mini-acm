@@ -95,7 +95,9 @@
         <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
       </q-card-section>
 
-      <q-card-section v-else-if="kind === 'hub'">
+        <q-banner dense rounded class="bg-blue-1 text-primary q-mb-md">
+          <strong>Mgmt cluster (v)Host</strong> — guest that <em>runs</em> ACM.
+        </q-banner>
         <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
         <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
         <q-select v-model="draft.profile" :options="hubProfiles" outlined dense label="Profile"
@@ -112,9 +114,9 @@
         <q-slider v-model="draft.diskGiB" :min="100" :max="400" :step="10" label class="q-mb-sm"
           @update:model-value="syncGuestDisk" />
         <div class="text-caption text-grey-7 q-mb-md">
-          Guest shape: 1× virtio disk · 1× NIC (libvirt-network) — extend disks/NICs later
+          Guest shape: 1× virtio disk · 1× NIC (libvirt-network)
         </div>
-        <q-toggle v-model="draft.installACM" label="Install ACM after hub OCP" />
+        <q-toggle v-model="draft.installACM" label="Install ACM on this mgmt cluster" />
       </q-card-section>
 
       <q-card-section v-else-if="kind === 'acm'">
@@ -126,6 +128,9 @@
       </q-card-section>
 
       <q-card-section v-else-if="kind === 'cluster'">
+        <q-banner dense rounded class="bg-blue-1 text-primary q-mb-md">
+          <strong>Deployment cluster (v)Host</strong> — guest set <em>managed by</em> ACM.
+        </q-banner>
         <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
         <q-input v-model="draft.name" outlined dense label="Cluster name" class="q-mb-sm" />
         <q-select v-model="draft.profile" :options="clusterProfiles" outlined dense label="Profile"
@@ -189,9 +194,9 @@ const gwPhases = ['planned', 'booted', 'configured']
 const title = computed(() => {
   if (props.kind === 'infraHost') return 'Edit MACHINE-HOST'
   if (props.kind === 'gateway') return 'Edit VYOS-GW'
-  if (props.kind === 'hub') return 'Edit MGMT-CLUSTER'
+  if (props.kind === 'hub') return 'Edit mgmt cluster (v)Host'
   if (props.kind === 'acm') return 'Edit ACM'
-  return 'Edit DEPLOYMENT-CLUSTER'
+  return 'Edit deployment cluster (v)Host'
 })
 
 const diskTotal = computed(() =>

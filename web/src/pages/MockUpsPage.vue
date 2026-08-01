@@ -6,9 +6,8 @@
       <q-btn color="primary" icon="add" label="Create MockUp" class="q-mr-sm" @click="createOpen = true" />
       <q-btn flat dense icon="refresh" label="Refresh" @click="load" />
     </div>
-    <p class="text-body1 text-grey-8 q-mb-lg">
-      A MockUp is the top-level lab object (like a Target in etcd-synthetic-load).
-      Flow: Create → Topology → Wizard → Derive YAML → CLI.
+    <p class="text-body2 text-grey-7 q-mb-lg">
+      Lab rack blueprints — open Topology to place hosts, then Wizard to fill gaps.
     </p>
 
     <div v-if="loading" class="row justify-center q-my-xl">

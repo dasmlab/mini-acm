@@ -33,11 +33,8 @@
         </q-item>
 
         <q-separator class="q-my-md" />
-        <div class="q-pa-sm">
-          <q-chip color="primary" text-color="white" icon="info" square class="full-width"
-            style="white-space: normal; height: auto; min-height: 32px">
-            MockUp → Topology → Wizard → derive YAML → CLI
-          </q-chip>
+        <div class="q-px-md q-pb-md text-caption text-grey-7">
+          Create a MockUp, arrange topology, then run the wizard.
         </div>
       </q-list>
     </q-drawer>
