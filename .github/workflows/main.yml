@@ -91,16 +91,34 @@ jobs:
           set -euo pipefail
           cid="mini-acm-smoke-${GITHUB_SHA::8}"
           docker rm -f "${cid}" 2>/dev/null || true
-          docker run -d --name "${cid}" -p 18080:8080 "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
+          # Ensure local engine has the tag we just pushed (buildah vs docker stores).
+          docker pull "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
+          # Avoid host port collisions — hit the container network IP directly.
+          docker run -d --name "${cid}" "ghcr.io/dasmlab/mini-acm:${VERSION_TAG}"
           trap 'docker rm -f "${cid}" 2>/dev/null || true' EXIT
+          ip=""
+          for _ in $(seq 1 30); do
+            ip="$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${cid}" 2>/dev/null || true)"
+            if [ -n "${ip}" ]; then
+              break
+            fi
+            sleep 1
+          done
+          if [ -z "${ip}" ]; then
+            echo "ERROR: no container IP"
+            docker logs "${cid}" || true
+            exit 1
+          fi
+          echo "smoke via http://${ip}:8080"
           for _ in $(seq 1 40); do
-            if curl -fsS "http://127.0.0.1:18080/healthz" >/dev/null 2>&1; then
-              curl -fsS "http://127.0.0.1:18080/api/v1/version"
+            if curl -fsS "http://${ip}:8080/healthz" >/dev/null 2>&1; then
+              curl -fsS "http://${ip}:8080/api/v1/version"
               exit 0
             fi
             sleep 2
           done
           docker logs "${cid}" || true
+          docker inspect "${cid}" || true
           exit 1
 
       - name: Ensure HAProxy CERT for FQDN
