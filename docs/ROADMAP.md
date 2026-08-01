@@ -25,6 +25,17 @@ MockUp (canvas)
 
 Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
 
+## Topology views (UI)
+
+Two meat-and-potatoes views (plus Full rack):
+
+| View | Shows | Point |
+|------|-------|--------|
+| **Infrastructure** | MACHINE-HOST, ADAPTER, guest VMs (mgmt + deployments) | VMs / OS that back clusters. Adapter = IaaS (libvirt today; Azure Spot later). |
+| **Cluster mgmt** | ACM + home mgmt OCP + managed deployments | ACM lives on mgmt; governs spokes. Does **not** fully self-manage the home cluster yet — sovereign / multi-tenant posture is later. |
+| **Full rack** | Everything above + **VYOS-GW** | GW / vSwitch / way-out through the real host. Not part of cluster talk. |
+
+**Later (not modeled as addables yet):** HAProxy (or similar) on the *cluster* path for VIPs; test/app payloads on deployment clusters; ACM self-management.
 
 The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mini-acm’s container runtime talks to libvirt:
 

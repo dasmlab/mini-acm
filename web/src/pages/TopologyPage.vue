@@ -10,29 +10,28 @@
       </div>
 
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
-        <q-list style="min-width: 300px">
-          <q-item-label header>Cluster layer</q-item-label>
+        <q-list style="min-width: 320px">
+          <q-item-label header>Infrastructure</q-item-label>
           <q-item clickable v-close-popup @click="onAddCluster">
             <q-item-section avatar><q-icon name="developer_board" color="primary" /></q-item-section>
             <q-item-section>
               <q-item-label>Deployment cluster (v)Host</q-item-label>
-              <q-item-label caption>OCP guests · managed by ACM</q-item-label>
+              <q-item-label caption>Guest VMs that back a managed OCP</q-item-label>
             </q-item-section>
           </q-item>
-          <q-separator />
-          <q-item-label header>Application layer</q-item-label>
           <q-item disable>
-            <q-item-section avatar><q-icon name="extension" color="grey" /></q-item-section>
+            <q-item-section avatar><q-icon name="router" color="grey" /></q-item-section>
             <q-item-section>
-              <q-item-label>Test / app payload</q-item-label>
-              <q-item-label caption>Coming later — ACM is the only payload today</q-item-label>
+              <q-item-label>HAProxy / VIP front</q-item-label>
+              <q-item-label caption>Later — cluster ingress path, not VyOS</q-item-label>
             </q-item-section>
           </q-item>
           <q-separator />
           <q-item dense>
             <q-item-section>
               <q-item-label caption>
-                Infra singletons (machine host, adapter, VyOS, mgmt) ship with the MockUp — select on canvas to edit.
+                Host, adapter, VyOS, and mgmt are MockUp singletons — select on canvas to edit.
+                VyOS matters for vSwitch / egress; not for cluster-mgmt talk.
               </q-item-label>
             </q-item-section>
           </q-item>
@@ -58,11 +57,11 @@
       </div>
 
       <div class="legend q-mb-md">
-        <span class="legend-item"><i class="swatch swatch-host" /> Host / adapter</span>
-        <span class="legend-item"><i class="swatch swatch-gw" /> Gateway</span>
-        <span class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt OCP</span>
-        <span class="legend-item"><i class="swatch swatch-dep" /> Deployment OCP</span>
-        <span class="legend-item"><i class="swatch swatch-acm" /> ACM payload</span>
+        <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-host" /> Host / adapter</span>
+        <span v-if="layer === 'all'" class="legend-item"><i class="swatch swatch-gw" /> Gateway (egress)</span>
+        <span class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt</span>
+        <span class="legend-item"><i class="swatch swatch-dep" /> Deployment</span>
+        <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
         <span class="legend-hint">{{ layerHint }}</span>
       </div>
 
@@ -196,18 +195,27 @@ const layer = ref('all')
 let layoutTimer = null
 
 const layerOptions = [
-  { id: 'all', title: 'All layers', sub: 'Full rack' },
-  { id: 'infra', title: 'Infra / net', sub: 'Host · adapter · GW' },
-  { id: 'cluster', title: 'Cluster', sub: 'OCP vHosts' },
-  { id: 'app', title: 'Application', sub: 'ACM payload' },
+  { id: 'all', title: 'Full rack', sub: 'Incl. egress / GW' },
+  { id: 'infra', title: 'Infrastructure', sub: 'Host · VMs · adapter' },
+  { id: 'cluster', title: 'Cluster mgmt', sub: 'ACM · home + managed' },
 ]
 
 const layerHint = computed(() => {
-  if (layer.value === 'infra') return 'HW + network + IaaS adapter (libvirt today)'
-  if (layer.value === 'cluster') return 'OCP guests — mgmt runs ACM; deployments are managed'
-  if (layer.value === 'app') return 'Payload on mgmt — ACM only for now'
-  return 'Drag · click to inspect · Edit for full form'
+  if (layer.value === 'infra') {
+    return 'VMs that run the OS / back clusters · adapter is IaaS (libvirt today)'
+  }
+  if (layer.value === 'cluster') {
+    return 'ACM lives on mgmt (does not fully self-manage yet) · governs deployments'
+  }
+  return 'GW / vSwitch / way-out only here · HAProxy belongs with cluster path later'
 })
+
+/** Which object-list buckets each view shows. Hub + deployments appear in both infra (as VMs) and cluster (as OCP). */
+const LAYER_ROWS = {
+  infra: new Set(['infraHost', 'adapter', 'hub', 'cluster']),
+  cluster: new Set(['hub', 'cluster', 'acm']),
+  // gateway only in full rack — egress / vSwitch, not meat-and-potatoes cluster talk
+}
 
 const objectSummary = computed(() => {
   if (!mockup.value) return ''
@@ -219,51 +227,55 @@ const objectSummary = computed(() => {
 const objectRows = computed(() => {
   const m = mockup.value
   if (!m?.spec) return []
+  const L = layer.value
   const rows = []
   const ih = m.spec.infraHost
   if (ih?.id) {
     rows.push({
-      id: ih.id, kind: 'infraHost', layer: 'infra',
+      id: ih.id, kind: 'infraHost',
       title: ih.label || 'MACHINE-HOST',
-      sub: 'Infra · HW host',
+      sub: 'HW host · libvirt / podman',
     })
   }
   rows.push({
-    id: 'adapter', kind: 'adapter', layer: 'infra',
+    id: 'adapter', kind: 'adapter',
     title: 'ADAPTER',
-    sub: `Infra · ${m.spec.provider || 'libvirt'} IaaS`,
+    sub: `${m.spec.provider || 'libvirt'} IaaS`,
   })
   const gw = m.spec.gateway
   if (gw?.id) {
     rows.push({
-      id: gw.id, kind: 'gateway', layer: 'infra',
+      id: gw.id, kind: 'gateway',
       title: gw.label || 'VYOS-GW',
-      sub: 'Infra · edge net',
+      sub: 'Egress · vSwitch / WAN',
     })
   }
   if (m.spec.hub?.id) {
     rows.push({
-      id: m.spec.hub.id, kind: 'hub', layer: 'cluster',
+      id: m.spec.hub.id, kind: 'hub',
       title: m.spec.hub.label || 'MGMT-CLUSTER',
-      sub: 'Cluster · runs ACM',
+      sub: L === 'infra' ? 'Guest VM · runs OCP' : 'Home cluster · hosts ACM',
     })
   }
   for (const c of m.spec.clusters || []) {
     rows.push({
-      id: c.id, kind: 'cluster', layer: 'cluster',
+      id: c.id, kind: 'cluster',
       title: c.label || c.name,
-      sub: `Cluster · managed · ${c.phase || 'planned'}`,
+      sub: L === 'infra'
+        ? `Guest VMs · ${c.phase || 'planned'}`
+        : `Managed OCP · ${c.phase || 'planned'}`,
     })
   }
   if (m.spec.acm?.id) {
     rows.push({
-      id: m.spec.acm.id, kind: 'acm', layer: 'app',
+      id: m.spec.acm.id, kind: 'acm',
       title: m.spec.acm.label || 'ACM',
-      sub: m.spec.acm.enabled ? 'App · payload / governs' : 'App · disabled',
+      sub: m.spec.acm.enabled ? 'Governs deployments · not full self-mgmt yet' : 'Disabled',
     })
   }
-  if (layer.value === 'all') return rows
-  return rows.filter((r) => r.layer === layer.value)
+  if (L === 'all') return rows
+  const allow = LAYER_ROWS[L]
+  return allow ? rows.filter((r) => allow.has(r.kind)) : rows
 })
 
 const selectedNodeData = computed(() => {
@@ -324,8 +336,8 @@ const selectedMeta = computed(() => {
     return {
       classLabel: 'Edge gateway',
       title: d.label || 'VYOS-GW',
-      roleLine: 'Role: NAT / firewall WAN↔lab LAN',
-      acmLine: 'Layer: infra / network',
+      roleLine: 'Role: vSwitch / NAT / way out via real host',
+      acmLine: 'Shown in Full rack — not part of cluster-mgmt view',
       editable: true,
       facts: [
         { k: 'LAN', v: `${d.lanCIDR || '—'} · ${d.lanIP || ''}` },
@@ -336,10 +348,14 @@ const selectedMeta = computed(() => {
   }
   if (n.kind === 'hub') {
     return {
-      classLabel: 'Cluster (v)Host',
+      classLabel: layer.value === 'infra' ? 'Guest VM (mgmt)' : 'Home cluster',
       title: d.label || 'MGMT-CLUSTER',
-      roleLine: 'Role: Management OCP guest',
-      acmLine: 'Layer: cluster · runs ACM payload',
+      roleLine: layer.value === 'infra'
+        ? 'Role: VM(s) that run the mgmt OCP OS'
+        : 'Role: OCP that hosts ACM (ACM does not fully self-manage yet)',
+      acmLine: layer.value === 'cluster'
+        ? 'Cluster mgmt · ACM home — sovereign / multi-tenant story later'
+        : 'Infrastructure · OS-backing guests',
       editable: true,
       facts: [
         { k: 'Hostname', v: d.hostname || '—' },
@@ -350,10 +366,12 @@ const selectedMeta = computed(() => {
   }
   if (n.kind === 'acm') {
     return {
-      classLabel: 'Application payload',
+      classLabel: 'Cluster management',
       title: d.label || 'ACM',
-      roleLine: 'Role: MultiClusterHub on mgmt cluster',
-      acmLine: d.enabled ? 'Governs deployment cluster LCs' : 'Disabled',
+      roleLine: 'Role: MultiClusterHub on mgmt — governs deployments',
+      acmLine: d.enabled
+        ? 'Self-management / sovereign hub is a later posture — today ACM lives here, manages spokes'
+        : 'Disabled',
       editable: true,
       facts: [
         { k: 'MCE', v: d.mceChannel || '—' },
@@ -362,10 +380,12 @@ const selectedMeta = computed(() => {
     }
   }
   return {
-    classLabel: 'Cluster (v)Host',
+    classLabel: layer.value === 'infra' ? 'Guest VMs (deployment)' : 'Managed cluster',
     title: d.label || d.name,
-    roleLine: 'Role: Deployment OCP guest set',
-    acmLine: 'Layer: cluster · managed by ACM',
+    roleLine: layer.value === 'infra'
+      ? 'Role: VM set that backs a deployment OCP'
+      : 'Role: Spoke OCP · lifecycle owned by ACM',
+    acmLine: layer.value === 'cluster' ? 'Cluster mgmt · managed by hub ACM' : 'Infrastructure · OS-backing guests',
     editable: true,
     facts: [
       { k: 'Name', v: d.name || '—' },
