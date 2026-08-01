@@ -54,9 +54,11 @@
         label="Deploy"
         class="q-mr-sm"
         :loading="deploying"
-        :disable="isLocked"
+        :disable="isLocked || !!eeBlockReason"
         @click="onDeploy"
-      />
+      >
+        <q-tooltip v-if="eeBlockReason">{{ eeBlockReason }}</q-tooltip>
+      </q-btn>
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
         <q-list style="min-width: 340px">
           <q-item-label header>{{ isFreeForm ? 'Free-form palette' : 'Guided add' }}</q-item-label>
@@ -225,7 +227,9 @@
                   <q-btn flat color="deep-purple-7" label="Validate" icon="rule"
                     :disable="isLocked" :loading="validating" @click="onValidate" />
                   <q-btn flat color="orange-9" label="Deploy" icon="rocket_launch"
-                    :disable="isLocked" :loading="deploying" @click="onDeploy" />
+                    :disable="isLocked || !!eeBlockReason" :loading="deploying" @click="onDeploy">
+                    <q-tooltip v-if="eeBlockReason">{{ eeBlockReason }}</q-tooltip>
+                  </q-btn>
                   <q-btn v-if="isLocked" flat color="warning" label="Clean" icon="cleaning_services"
                     :loading="cleaning" @click="onClean" />
                 </div>
@@ -345,7 +349,7 @@ import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, cleanMockup, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, cleanMockup, listInventory, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
@@ -353,6 +357,7 @@ import { enumerateNetwork } from 'src/lib/network'
 const props = defineProps({ id: { type: String, required: true } })
 
 const mockup = ref(null)
+const inventory = ref([])
 const loading = ref(true)
 const saving = ref(false)
 const deriving = ref(false)
@@ -393,6 +398,26 @@ function phaseColor(phase) {
 const isLocked = computed(() => {
   const p = mockup.value?.status?.phase || ''
   return p === 'failed' || p === 'deploying'
+})
+
+const eeBlockReason = computed(() => {
+  const list = inventory.value || []
+  const h = list.find((x) => x.seed)
+    || list.find((x) => x.status === 'reachable')
+    || list[0]
+    || null
+  if (!h) return 'No Inventory MACHINE-HOST — add and Probe one first'
+  if (h.status === 'unreachable') return `${h.name} is unreachable — Probe Inventory`
+  if (h.status === 'partial') return `${h.name} is partial — Fix this on Inventory`
+  const oi = String(h.facts?.openshiftInstall || '').trim()
+  if (!oi || oi === 'missing') {
+    return `openshift-install missing on ${h.name} — install on host, then Probe`
+  }
+  const pod = String(h.facts?.podman || '').trim().toLowerCase()
+  if (!pod || pod === 'missing' || pod.includes('missing')) {
+    return `podman missing on ${h.name} — Fix this on Inventory`
+  }
+  return ''
 })
 
 const layerOptions = computed(() => {
@@ -751,7 +776,12 @@ const selectedMeta = computed(() => {
 async function load() {
   loading.value = true
   try {
-    mockup.value = await getMockup(props.id)
+    const [m, inv] = await Promise.all([
+      getMockup(props.id),
+      listInventory().catch(() => []),
+    ])
+    mockup.value = m
+    inventory.value = inv || []
     canvasMode.value = mockup.value.spec.canvasMode || 'guided'
     if (!layerOptions.value.some((o) => o.id === layer.value)) {
       layer.value = 'all'

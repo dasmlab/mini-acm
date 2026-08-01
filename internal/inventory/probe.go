@@ -239,7 +239,7 @@ printf 'PROBE_OK=1\n'
 
 	if !installerOK {
 		res.Issues = append(res.Issues, ProbeIssue{
-			ID: "openshift-install-missing", Severity: "warn",
+			ID: "openshift-install-missing", Severity: "error",
 			Message: "openshift-install missing — required for OCP-MGMT Deploy (install client on MACHINE-HOST before Deploy)",
 			Fixable: false,
 		})
