@@ -258,8 +258,10 @@ const allNodes = computed(() => {
       const hp = pos(hub.id, { x: mgmtVh?.x || 260, y: yOCP })
       out.push({
         id: hub.id, kind: 'hub',
-        label: hub.label || 'MGMT-CLUSTER',
-        sub: L === 'all' ? 'home · hosts ACM' : 'home · 1× SNO · hosts ACM',
+        label: hub.label || (L === 'all' && m.spec.style === 'single-sno-ocp' ? 'OCP-MGMT' : 'MGMT-CLUSTER'),
+        sub: m.spec.style === 'single-sno-ocp'
+          ? (L === 'all' ? 'SNO · OCP' : 'SNO · single node OCP')
+          : (L === 'all' ? 'home · hosts ACM' : 'home · 1× SNO · hosts ACM'),
         x: hp.x, y: hp.y, w: 200, h: 52, rx: 12, cls: 'fill-hub',
       })
     }

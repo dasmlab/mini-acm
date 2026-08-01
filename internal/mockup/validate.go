@@ -40,36 +40,63 @@ func ValidateTopology(m *MockUp) ValidationResult {
 	if clusters == nil {
 		clusters = []ClusterNode{}
 	}
+	style := m.Spec.Style
+	if style == "" {
+		style = StyleMiniACMMultiCluster
+	}
+	isSNOOnly := style == StyleSingleSNOOCP
 
 	orphans := []CanvasNode{}
 	if m.Spec.Canvas != nil {
 		orphans = m.Spec.Canvas.Orphans
 	}
 
-	// --- minimum ACM lab (default picture) ---
-	if hasACM && !hasHub {
-		res.Issues = append(res.Issues, ValidationIssue{
-			Code: "acm-needs-mgmt", Severity: "error", Object: m.Spec.ACM.ID,
-			Message: "ACM is present but there is no mgmt cluster — ACM must live on a home OCP (MGMT-CLUSTER).",
-		})
-	}
-	if len(clusters) > 0 && !hasHub {
-		res.Issues = append(res.Issues, ValidationIssue{
-			Code: "deployments-need-mgmt", Severity: "error",
-			Message: "Deployment cluster(s) exist without a mgmt cluster — you need at least MGMT + ACM to get a managed cluster off the ground.",
-		})
-	}
-	if len(clusters) > 0 && !hasACM {
-		res.Issues = append(res.Issues, ValidationIssue{
-			Code: "deployments-need-acm", Severity: "error",
-			Message: "Deployment cluster(s) exist but ACM is missing/disabled — spokes are managed by ACM on the mgmt cluster.",
-		})
-	}
-	if hasHub && hasACM && len(clusters) == 0 {
-		res.Issues = append(res.Issues, ValidationIssue{
-			Code: "acm-needs-spoke", Severity: "error", Object: m.Spec.ACM.ID,
-			Message: "ACM + mgmt are present but there is no deployment cluster — minimum demo needs ≥1 managed cluster.",
-		})
+	// --- style-specific minimum picture ---
+	if isSNOOnly {
+		if !hasHub {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "sno-needs-mgmt", Severity: "error",
+				Message: "Single SNO style needs an OCP-MGMT (SNO) cluster — that is the whole point of this MockUp.",
+			})
+		}
+		if hasACM {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "sno-unexpected-acm", Severity: "warn", Object: m.Spec.ACM.ID,
+				Message: "ACM is enabled but this style stops before ACM — hide/disable ACM, or switch style to MINI ACM Multi-Cluster.",
+			})
+		}
+		if len(clusters) > 0 {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "sno-unexpected-deploy", Severity: "warn",
+				Message: "Deployment clusters are present on a Single SNO MockUp — remove them, or use MINI ACM Multi-Cluster.",
+			})
+		}
+	} else {
+		// MINI ACM (and default): ACM lab picture
+		if hasACM && !hasHub {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "acm-needs-mgmt", Severity: "error", Object: m.Spec.ACM.ID,
+				Message: "ACM is present but there is no OCP-MGMT — ACM must live on a home OCP (MGMT-CLUSTER).",
+			})
+		}
+		if len(clusters) > 0 && !hasHub {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "deployments-need-mgmt", Severity: "error",
+				Message: "OCP-DEPLOY cluster(s) exist without OCP-MGMT — you need at least mgmt + ACM to get a managed cluster off the ground.",
+			})
+		}
+		if len(clusters) > 0 && !hasACM {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "deployments-need-acm", Severity: "error",
+				Message: "OCP-DEPLOY cluster(s) exist but ACM is missing/disabled — spokes are managed by ACM on the mgmt cluster.",
+			})
+		}
+		if hasHub && hasACM && len(clusters) == 0 {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "acm-needs-spoke", Severity: "error", Object: m.Spec.ACM.ID,
+				Message: "ACM + OCP-MGMT are present but there is no OCP-DEPLOY — minimum demo needs ≥1 managed cluster.",
+			})
+		}
 	}
 	if !hasHost {
 		res.Issues = append(res.Issues, ValidationIssue{
@@ -78,14 +105,14 @@ func ValidateTopology(m *MockUp) ValidationResult {
 		})
 	}
 
-	// --- vHosts need a payload (cluster OS / VyOS / HAP / other) ---
+	// --- vHosts need a payload (OCP-MGMT / OCP-DEPLOY / VyOS / HAP / other) ---
 	coveredVHosts := map[string]string{} // vhost id → payload description
 
 	if hasGW {
 		coveredVHosts["vhost-gw"] = "VyOS (RTR/NF)"
 	}
 	if hasHub {
-		coveredVHosts["vhost-hub-0"] = "MGMT-CLUSTER (OCP)"
+		coveredVHosts["vhost-hub-0"] = "OCP-MGMT (SNO)"
 	}
 	for _, c := range clusters {
 		n := c.Count
@@ -181,7 +208,15 @@ func ValidateTopology(m *MockUp) ValidationResult {
 		}
 	}
 	res.OK = errs == 0
-	if res.OK && warns == 0 {
+	if isSNOOnly {
+		if res.OK && warns == 0 {
+			res.Summary = "Topology looks complete for a Single SNO (OCP-MGMT) MockUp."
+		} else if res.OK {
+			res.Summary = fmt.Sprintf("OK with %d warning(s) — SNO picture is usable; tidy warns when hardening.", warns)
+		} else {
+			res.Summary = fmt.Sprintf("%d error(s), %d warning(s) — fix before treating this as a ready SNO plan.", errs, warns)
+		}
+	} else if res.OK && warns == 0 {
 		res.Summary = "Topology looks complete for a minimal ACM lab picture."
 	} else if res.OK {
 		res.Summary = fmt.Sprintf("OK with %d warning(s) — good enough to teach; fix warns when you harden the rack.", warns)

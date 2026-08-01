@@ -283,13 +283,88 @@ func (s *Store) Create(req CreateReq) (*MockUp, error) {
 	}
 	id := uuid.NewString()
 	now := time.Now().UTC().Format(time.RFC3339)
-	m := defaultMockUp(id, req.Name, req.BaseDomain, req.Provider, req.Notes, now)
+	m := seedMockUp(style, id, req.Name, req.BaseDomain, req.Provider, req.Notes, now)
 	m.Spec.Genre = genre
 	m.Spec.Style = style
 	if err := s.save(m); err != nil {
 		return nil, err
 	}
 	return m, nil
+}
+
+// seedMockUp builds the default canvas for a creatable style.
+func seedMockUp(style, id, name, domain, provider, notes, now string) *MockUp {
+	switch style {
+	case StyleSingleSNOOCP:
+		return defaultSingleSNOMockUp(id, name, domain, provider, notes, now)
+	default:
+		return defaultMockUp(id, name, domain, provider, notes, now)
+	}
+}
+
+func defaultSingleSNOMockUp(id, name, domain, provider, notes, now string) *MockUp {
+	infraID := "infra-host"
+	gwID := "gateway"
+	hubID := "hub"
+	gw := defaultGateway()
+	return &MockUp{
+		APIVersion: "mini-acm.dasmlab.org/v1alpha1",
+		Kind:       "MockUp",
+		Metadata: Metadata{
+			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
+		},
+		Spec: Spec{
+			Genre:      GenreClusterManagement,
+			Style:      StyleSingleSNOOCP,
+			BaseDomain: domain,
+			Provider:   provider,
+			Network: NetworkSpec{
+				MachineCIDR: "10.77.30.0/24",
+				Gateway:     "10.77.30.1",
+				APIVIP:      "10.77.30.20",
+				IngressVIP:  "10.77.30.21",
+				DHCPStart:   "10.77.30.100",
+				DHCPEnd:     "10.77.30.150",
+				DNS:         "10.77.30.1",
+			},
+			InfraHost: defaultInfraHost(name),
+			Gateway:   gw,
+			Hub: HubNode{
+				ID: hubID, Label: "OCP-MGMT", Mode: "local-agent",
+				Version: "4.18", Profile: "hub-supported",
+				Hostname: "sno", IP: "10.77.30.20", MAC: "52:54:00:13:00:20",
+				CPU: 8, MemoryMiB: 24576, DiskGiB: 200, InstallACM: false,
+				Disks: []DiskSpec{{Name: "vda", SizeGiB: 200, Bus: "virtio", Role: "system"}},
+				NICs: []NICSpec{{
+					Name: "eth0", Model: "virtio", Mode: "libvirt-network",
+					Network: "ocp-lab", Role: "guest",
+				}},
+			},
+			ACM: ACMNode{
+				ID: "acm", Label: "ACM", Enabled: false,
+				MCEChannel: "stable-2.7", ACMChannel: "release-2.12",
+			},
+			Clusters: []ClusterNode{},
+			Canvas: &CanvasSpec{
+				OmitACM: true, // style stops before ACM
+			},
+			Gaps: GapParams{
+				ManualApprove:    true,
+				PullSecretFile:   "$PULL_SECRET_FILE",
+				SSHPublicKeyFile: "$SSH_PUBLIC_KEY_FILE",
+				HubKubeconfig:    fmt.Sprintf("./data/hub-%s/auth/kubeconfig", name),
+			},
+		},
+		Status: Status{
+			Phase:   PhaseCreated,
+			Message: "Single SNO MockUp — MACHINE-HOST + VYOS-GW + OCP-MGMT (no ACM / deployments)",
+		},
+		Layout: Layout{Nodes: map[string]NodePos{
+			infraID: {X: 120, Y: 500},
+			gwID:    {X: 200, Y: 340},
+			hubID:   {X: 420, Y: 280},
+		}},
+	}
 }
 
 func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
@@ -324,7 +399,7 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 			InfraHost: defaultInfraHost(name),
 			Gateway:   gw,
 			Hub: HubNode{
-				ID: hubID, Label: "MGMT-CLUSTER", Mode: "local-agent",
+				ID: hubID, Label: "OCP-MGMT", Mode: "local-agent",
 				Version: "4.18", Profile: "hub-supported",
 				Hostname: "hub-sno", IP: "10.77.30.20", MAC: "52:54:00:13:00:20",
 				CPU: 8, MemoryMiB: 24576, DiskGiB: 200, InstallACM: true,
@@ -346,7 +421,7 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 				HubKubeconfig:    fmt.Sprintf("./data/hub-%s/auth/kubeconfig", name),
 			},
 		},
-		Status: Status{Phase: PhaseCreated, Message: "MockUp created — MACHINE-HOST + VYOS-GW + MGMT + deployment clusters"},
+		Status: Status{Phase: PhaseCreated, Message: "MockUp created — MACHINE-HOST + VYOS-GW + OCP-MGMT + ACM + OCP-DEPLOY clusters"},
 		Layout: Layout{Nodes: map[string]NodePos{
 			infraID: {X: 120, Y: 500},
 			gwID:    {X: 140, Y: 340},

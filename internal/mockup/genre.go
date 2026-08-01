@@ -10,6 +10,7 @@ const (
 	GenreInfrastructure          = "infrastructure"
 
 	StyleMiniACMMultiCluster = "mini-acm-multi-cluster"
+	StyleSingleSNOOCP        = "single-sno-ocp"
 	StyleWindowsUI           = "windows-ui"
 	StyleWebFullStack        = "web-full-stack"
 	StyleInfraNodeNetwork    = "infra-node-network-payload"
@@ -56,23 +57,40 @@ type CatalogResponse struct {
 func Catalog() CatalogResponse {
 	styles := []StyleDef{
 		{
-			ID: StyleMiniACMMultiCluster, Genre: GenreClusterManagement,
-			Label: "MINI ACM Multi-Cluster",
-			Description: "Mgmt OCP hosts ACM; managed deployment clusters on a lab rack (MACHINE-HOST → adapter → vHosts).",
+			ID: StyleSingleSNOOCP, Genre: GenreClusterManagement,
+			Label: "Single SNO OCP",
+			Description: "Bring up one SNO (OCP-MGMT) via the adapter (libvirt today). Same MACHINE-HOST → vHost path as the mgmt half of MINI ACM — stop before ACM / spokes.",
 			Available: true,
 			ObjectTypes: []string{
-				"MachineHost", "Adapter", "VHost", "Gateway", "Hub", "ACM", "DeploymentCluster", "Appliance",
+				"MachineHost", "Adapter", "VHost", "Gateway", "OCP-MGMT", "Appliance",
 			},
-			Views: []string{"all", "infra", "network", "cluster", "app"},
-			DefaultSeed: "lab rack with hub + ACM + 2 deployment clusters",
+			Views:       []string{"all", "infra", "network", "cluster"},
+			DefaultSeed: "lab rack with MACHINE-HOST + VyOS + one SNO OCP-MGMT (no ACM, no deployments)",
 			Relations: []RelationRule{
 				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
 				{From: "VHost", Rel: "hostedBy", To: "Adapter", Cardinality: "1..*"},
 				{From: "Gateway", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "VyOS on vHost-GW"},
-				{From: "Hub", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "MGMT SNO guest"},
-				{From: "DeploymentCluster", Rel: "runsOn", To: "VHost", Cardinality: "1..*", Notes: "cp/worker guests"},
-				{From: "ACM", Rel: "runsOn", To: "Hub", Cardinality: "1..1"},
-				{From: "DeploymentCluster", Rel: "managedBy", To: "ACM", Cardinality: "1..*"},
+				{From: "OCP-MGMT", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "SNO guest — same Hub object as MINI ACM"},
+			},
+		},
+		{
+			ID: StyleMiniACMMultiCluster, Genre: GenreClusterManagement,
+			Label: "MINI ACM Multi-Cluster",
+			Description: "Composable: Single SNO (OCP-MGMT) + ACM payload + N× OCP-DEPLOY. Mgmt hosts ACM; managed deployments on the lab rack.",
+			Available: true,
+			ObjectTypes: []string{
+				"MachineHost", "Adapter", "VHost", "Gateway", "OCP-MGMT", "ACM", "OCP-DEPLOY", "Appliance",
+			},
+			Views: []string{"all", "infra", "network", "cluster", "app"},
+			DefaultSeed: "lab rack with OCP-MGMT + ACM + 2 OCP-DEPLOY clusters",
+			Relations: []RelationRule{
+				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
+				{From: "VHost", Rel: "hostedBy", To: "Adapter", Cardinality: "1..*"},
+				{From: "Gateway", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "VyOS on vHost-GW"},
+				{From: "OCP-MGMT", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "MGMT SNO guest"},
+				{From: "OCP-DEPLOY", Rel: "runsOn", To: "VHost", Cardinality: "1..*", Notes: "cp/worker guests"},
+				{From: "ACM", Rel: "runsOn", To: "OCP-MGMT", Cardinality: "1..1"},
+				{From: "OCP-DEPLOY", Rel: "managedBy", To: "ACM", Cardinality: "1..*"},
 			},
 		},
 		{
@@ -131,8 +149,8 @@ func Catalog() CatalogResponse {
 	genres := []GenreDef{
 		{
 			ID: GenreClusterManagement, Label: "Cluster Management",
-			Description: "Multi-cluster / fleet governance MockUps (ACM and future siblings).",
-			Styles: []string{StyleMiniACMMultiCluster},
+			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or MINI ACM (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
+			Styles: []string{StyleSingleSNOOCP, StyleMiniACMMultiCluster},
 		},
 		{
 			ID: GenreApplicationDevelopment, Label: "Application Development",

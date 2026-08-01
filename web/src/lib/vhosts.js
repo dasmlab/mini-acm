@@ -20,7 +20,7 @@ export function enumerateVHosts(m) {
       parentKind: 'hub',
       parentId: m.spec.hub.id,
       label: 'vHost-MGMT',
-      sub: 'SNO guest',
+      sub: 'SNO · OCP-MGMT',
     })
   }
   ;(m.spec.clusters || []).forEach((c, ci) => {

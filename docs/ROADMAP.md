@@ -15,15 +15,28 @@
 ```text
 Genre (product family)                    Style (template)
 ──────────────────────                    ────────────────
-Cluster Management                    →   MINI ACM Multi-Cluster   ← implemented
+Cluster Management                    →   Single SNO OCP           ← creatable
+                                      →   MINI ACM Multi-Cluster   ← creatable (= SNO + ACM + OCP-DEPLOY×N)
 Application Development               →   Windows UI MockUp        (catalog stub)
                                       →   Web Full-Stack App       (catalog stub)
 Infrastructure                        →   Node · Network · Payload (catalog stub)
 (+ Add Genre later: object types + relation rules)
 ```
 
+**Composable building blocks (Cluster Management):** `MachineHost` · `Adapter` · `VHost` · `Gateway`/`VyOS` · `OCP-MGMT` (SNO Hub) · `ACM` · `OCP-DEPLOY` · `Appliance`/`HAP`.
+Single SNO is the mgmt half alone (orchestrate adapter → one SNO). MINI ACM layers ACM + managed deployments on the same objects.
+
 Catalog API: `GET /api/v1/catalog` (object types + allowed relations per style).
 Existing racks without fields normalize to `cluster-management` / `mini-acm-multi-cluster`.
+
+### Style: Single SNO OCP
+
+```text
+MockUp (canvas)
+├── MACHINE-HOST     RHEL where libvirtd runs
+├── VYOS-GW          Edge router VM (optional but seeded)
+└── OCP-MGMT         One SNO guest — stop here (no ACM, no OCP-DEPLOY)
+```
 
 ### Style: MINI ACM Multi-Cluster
 
@@ -35,9 +48,9 @@ MockUp (canvas)
 ├── VYOS-GW          Edge router VM on MACHINE-HOST
 │                    eth0 WAN = host bridge · eth1 LAN = libvirt net (obscure CIDR 10.77.30.0/24)
 │                    NAT/FW — installer later; object is inventory now
-├── MGMT-CLUSTER     SNO guest on LAN (governance OCP)
-├── ACM              Operators on MGMT-CLUSTER
-└── DEPLOYMENT-CLUSTER×N   Compact guest sets on LAN; ACM owns LC
+├── OCP-MGMT         SNO guest on LAN (governance OCP) — same as Single SNO
+├── ACM              Operators on OCP-MGMT
+└── OCP-DEPLOY×N     Compact guest sets on LAN; ACM owns LC
 ```
 
 Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.

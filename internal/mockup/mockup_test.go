@@ -15,7 +15,7 @@ func TestCreateDerive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Spec.Hub.Label != "MGMT-CLUSTER" {
+	if m.Spec.Hub.Label != "MGMT-CLUSTER" && m.Spec.Hub.Label != "OCP-MGMT" {
 		t.Fatalf("hub label: %s", m.Spec.Hub.Label)
 	}
 	if m.Spec.InfraHost.Label != "MACHINE-HOST" || m.Spec.InfraHost.ID == "" {

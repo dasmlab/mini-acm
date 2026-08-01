@@ -11,6 +11,10 @@ func TestCatalogHasMiniACM(t *testing.T) {
 	if s == nil || !s.Available {
 		t.Fatal("mini-acm style must be available")
 	}
+	sno := LookupStyle(StyleSingleSNOOCP)
+	if sno == nil || !sno.Available {
+		t.Fatal("single-sno-ocp style must be available")
+	}
 	if len(s.Relations) < 3 {
 		t.Fatalf("want relation rules, got %d", len(s.Relations))
 	}
@@ -47,5 +51,32 @@ func TestCreateSetsGenreStyle(t *testing.T) {
 	}
 	if m.Spec.Genre != GenreClusterManagement || m.Spec.Style != StyleMiniACMMultiCluster {
 		t.Fatalf("genre/style: %s / %s", m.Spec.Genre, m.Spec.Style)
+	}
+}
+
+func TestCreateSingleSNO(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Create(CreateReq{
+		Name: "sno1", Genre: GenreClusterManagement, Style: StyleSingleSNOOCP,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Spec.Style != StyleSingleSNOOCP || m.Spec.Hub.Label != "OCP-MGMT" {
+		t.Fatalf("sno: style=%s hub=%s", m.Spec.Style, m.Spec.Hub.Label)
+	}
+	if m.Spec.ACM.Enabled || m.Spec.Hub.InstallACM {
+		t.Fatal("SNO style should not enable ACM")
+	}
+	if len(m.Spec.Clusters) != 0 {
+		t.Fatalf("want 0 deployments, got %d", len(m.Spec.Clusters))
+	}
+	res := ValidateTopology(m)
+	if !res.OK {
+		t.Fatalf("SNO validate: %+v", res)
 	}
 }

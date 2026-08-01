@@ -42,7 +42,10 @@
             <div class="text-caption text-grey-6">
               {{ m.spec?.baseDomain }} · {{ m.spec?.provider }}
               <template v-if="isMiniACM(m)">
-                · hub + ACM + {{ (m.spec?.clusters || []).length }} cluster(s)
+                · OCP-MGMT + ACM + {{ (m.spec?.clusters || []).length }} OCP-DEPLOY
+              </template>
+              <template v-else-if="isSingleSNO(m)">
+                · OCP-MGMT (SNO) only
               </template>
             </div>
             <div v-if="m.status?.message" class="text-caption q-mt-xs">{{ m.status.message }}</div>
@@ -162,10 +165,16 @@ const selectedStyle = computed(() =>
 )
 
 const styleHint = computed(() => selectedStyle.value?.description || '')
-const isMiniACMForm = computed(() => form.style === 'mini-acm-multi-cluster')
+const isMiniACMForm = computed(() =>
+  form.style === 'mini-acm-multi-cluster' || form.style === 'single-sno-ocp',
+)
 
 function isMiniACM(m) {
   return !m.spec?.style || m.spec.style === 'mini-acm-multi-cluster'
+}
+
+function isSingleSNO(m) {
+  return m.spec?.style === 'single-sno-ocp'
 }
 
 function styleLabel(m) {
