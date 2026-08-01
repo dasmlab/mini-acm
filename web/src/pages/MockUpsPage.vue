@@ -1,85 +1,147 @@
 <template>
-  <q-page padding>
-    <div class="row items-center q-mb-md">
-      <div class="text-h4">MockUps</div>
-      <q-space />
-      <q-btn color="primary" icon="add" label="New MockUp" class="q-mr-sm" @click="openCreate" />
-      <q-btn flat dense icon="refresh" label="Refresh" @click="load" />
-    </div>
-    <p class="text-body2 text-grey-7 q-mb-lg">
-      Blueprints by genre — <strong>Validate</strong> → <strong>Deploy</strong> against a green Inventory host.
-      Wizard collects gaps; Topology edits the rack.
-    </p>
+  <q-page class="mockups-page" padding>
+    <header class="page-head">
+      <div>
+        <p class="page-kicker">Lab rack blueprints</p>
+        <h1 class="page-title">MockUps</h1>
+        <p class="page-lead">
+          Validate → Deploy against a green Inventory host. Wizard collects gaps; Topology edits the rack.
+        </p>
+      </div>
+      <div class="page-head-actions">
+        <q-btn color="primary" unelevated icon="add" label="New MockUp" @click="openCreate" />
+        <q-btn outline color="primary" icon="refresh" label="Refresh" :loading="loading" @click="load" />
+      </div>
+    </header>
 
-    <div v-if="loading" class="row justify-center q-my-xl">
+    <div v-if="loading && mockups.length === 0" class="row justify-center q-my-xl">
       <q-spinner color="primary" size="3em" />
     </div>
 
-    <q-banner v-else-if="error" class="bg-orange-1 text-orange-9 q-mb-lg" rounded>
+    <q-banner v-else-if="error" class="bg-orange-2 text-orange-10 q-mb-lg" rounded>
       <template #avatar><q-icon name="cloud_off" color="orange-9" /></template>
       Could not reach the API ({{ error }}). Run <code>mock-me serve</code> on :8080.
     </q-banner>
 
-    <div v-else-if="mockups.length === 0" class="text-center text-grey-7 q-my-xl">
-      <q-icon name="account_tree" size="3em" class="q-mb-sm" />
-      <div class="q-mb-md">No MockUps yet — create one to begin.</div>
-      <q-btn color="primary" unelevated icon="add" label="New MockUp" @click="openCreate" />
+    <div v-else-if="mockups.length === 0" class="empty-state">
+      <q-icon name="account_tree" size="56px" color="blue-grey-5" />
+      <div class="empty-title">No MockUps yet</div>
+      <div class="empty-sub">Create a blueprint, then Validate → Deploy on a ready MACHINE-HOST.</div>
+      <q-btn color="primary" unelevated icon="add" label="New MockUp" class="q-mt-md" @click="openCreate" />
     </div>
 
-    <div v-else class="row q-col-gutter-md">
-      <div v-for="m in mockups" :key="m.metadata.id" class="col-12 col-sm-6 col-md-4">
-        <q-card flat bordered>
-          <q-card-section>
-            <div class="row items-center no-wrap">
-              <div class="text-h6 ellipsis">{{ m.metadata.name }}</div>
-              <q-space />
-              <q-badge :color="statusColor(m.status?.phase)" class="text-capitalize">
-                {{ m.status?.phase || 'created' }}
-              </q-badge>
-            </div>
-            <div class="text-caption text-grey-7 q-mt-xs">
-              {{ styleLabel(m) }}
-            </div>
-            <div class="text-caption text-grey-6">
-              {{ m.spec?.baseDomain }} · {{ m.spec?.provider }}
-              <template v-if="isACMMultiCluster(m)">
-                · OCP-MGMT + ACM + {{ (m.spec?.clusters || []).length }} OCP-DEPLOY
-              </template>
-              <template v-else-if="isSingleSNO(m)">
-                · OCP-MGMT (SNO) only
-              </template>
-            </div>
-            <div v-if="m.status?.message" class="text-caption q-mt-xs" :class="{ 'text-negative': isFailed(m) }">{{ m.status.message }}</div>
-          </q-card-section>
-          <q-separator />
-          <q-card-actions align="right" class="q-gutter-xs">
-            <q-btn flat dense size="sm" color="primary" label="Topology"
-              @click="$router.push({ name: 'topology', params: { id: m.metadata.id } })" />
-            <q-btn flat dense size="sm" color="primary" label="Wizard"
+    <div v-else class="mockup-grid">
+      <article
+        v-for="m in mockups"
+        :key="m.metadata.id"
+        class="mockup-card"
+        :class="[`phase-${m.status?.phase || 'created'}`, { locked: isLocked(m) }]"
+      >
+        <div class="card-accent" />
+        <div class="card-body">
+          <div class="card-top">
+            <h2 class="card-name">{{ m.metadata.name }}</h2>
+            <q-badge
+              :color="statusColor(m.status?.phase)"
+              class="phase-badge text-capitalize"
+              :outline="false"
+            >
+              {{ m.status?.phase || 'created' }}
+            </q-badge>
+          </div>
+
+          <div class="card-style">{{ styleLabel(m) }}</div>
+
+          <div class="card-meta">
+            <span>{{ m.spec?.baseDomain }}</span>
+            <span class="dot">·</span>
+            <span>{{ m.spec?.provider }}</span>
+            <template v-if="isACMMultiCluster(m)">
+              <span class="dot">·</span>
+              <span>OCP-MGMT + ACM + {{ (m.spec?.clusters || []).length }} OCP-DEPLOY</span>
+            </template>
+            <template v-else-if="isSingleSNO(m)">
+              <span class="dot">·</span>
+              <span>OCP-MGMT (SNO)</span>
+            </template>
+          </div>
+
+          <div
+            v-if="m.status?.message"
+            class="card-status"
+            :class="{ danger: isFailed(m), warn: isDeploying(m) }"
+          >
+            {{ m.status.message }}
+          </div>
+
+          <div class="card-actions">
+            <q-btn
+              unelevated
+              color="primary"
+              size="sm"
+              icon="account_tree"
+              label="Topology"
+              @click="$router.push({ name: 'topology', params: { id: m.metadata.id } })"
+            />
+            <q-btn
+              outline
+              color="primary"
+              size="sm"
+              label="Wizard"
               :disable="isLocked(m)"
-              @click="$router.push({ name: 'wizard', params: { id: m.metadata.id } })" />
-            <q-btn flat dense size="sm" color="primary" label="Derive"
+              @click="$router.push({ name: 'wizard', params: { id: m.metadata.id } })"
+            />
+            <q-btn
+              flat
+              color="blue-grey-8"
+              size="sm"
+              label="Derive"
               :loading="deriveBusy === m.metadata.id"
               :disable="isLocked(m) || phaseBusy(m)"
-              @click="doDerive(m)" />
-            <q-btn flat dense size="sm" color="deep-purple-7" label="Validate"
+              @click="doDerive(m)"
+            />
+            <q-btn
+              outline
+              color="deep-purple-7"
+              size="sm"
+              label="Validate"
               :loading="validateBusy === m.metadata.id"
               :disable="isLocked(m) || phaseBusy(m)"
-              @click="doValidate(m)" />
-            <q-btn flat dense size="sm" color="orange-9" label="Deploy"
+              @click="doValidate(m)"
+            />
+            <q-btn
+              unelevated
+              color="orange-9"
+              size="sm"
+              icon="rocket_launch"
+              label="Deploy"
               :loading="deployBusy === m.metadata.id"
               :disable="isLocked(m) || phaseBusy(m) || !canDeploy(m)"
-              @click="doDeploy(m)" />
+              @click="doDeploy(m)"
+            />
+            <q-space />
             <q-btn
               v-if="isFailed(m) || isDeploying(m)"
-              flat dense size="sm" color="warning" label="Clean"
+              unelevated
+              color="amber-9"
+              text-color="dark"
+              size="sm"
+              icon="cleaning_services"
+              label="Clean"
               :loading="cleanBusy === m.metadata.id"
               @click="doClean(m)"
             />
-            <q-btn flat dense size="sm" color="negative" label="Delete" @click="doDelete(m)" />
-          </q-card-actions>
-        </q-card>
-      </div>
+            <q-btn
+              flat
+              color="negative"
+              size="sm"
+              icon="delete"
+              label="Delete"
+              @click="doDelete(m)"
+            />
+          </div>
+        </div>
+      </article>
     </div>
 
     <CreateMockUpDialog
@@ -149,17 +211,17 @@ function styleLabel(m) {
 
 function statusColor(phase) {
   return {
-    created: 'grey-6',
-    configured: 'blue-7',
-    validated: 'deep-purple-6',
-    deploying: 'orange-8',
+    created: 'blue-grey-6',
+    configured: 'blue-8',
+    validated: 'deep-purple-7',
+    deploying: 'orange-9',
     deployed: 'positive',
     failed: 'negative',
-    'hub-ready': 'blue-7',
-    'acm-ready': 'teal-7',
-    clustered: 'orange-7',
+    'hub-ready': 'blue-8',
+    'acm-ready': 'teal-8',
+    clustered: 'orange-8',
     ready: 'positive',
-  }[phase] || 'grey-6'
+  }[phase] || 'blue-grey-6'
 }
 
 function phaseBusy(m) {
@@ -244,7 +306,6 @@ async function doDeploy(m) {
     deployJob.value = res.job
     deployOpen.value = true
     if (res.mockup) {
-      // optimistic phase bump
       const idx = mockups.value.findIndex((x) => x.metadata.id === m.metadata.id)
       if (idx >= 0) mockups.value[idx] = res.mockup
     }
@@ -298,3 +359,233 @@ function doDelete(m) {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.mockups-page {
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(21, 101, 192, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 131, 143, 0.08), transparent 50%),
+    #eef2f5;
+  min-height: calc(100vh - 100px);
+  max-width: none;
+  margin: 0;
+  padding-bottom: 2.5rem !important;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.page-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1565c0;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0d2137;
+  line-height: 1.15;
+}
+
+.page-lead {
+  margin: 0.45rem 0 0;
+  max-width: 42rem;
+  color: #455a64;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.page-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3.5rem 1rem;
+  max-width: 1280px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #cfd8dc;
+}
+
+.empty-title {
+  margin-top: 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #263238;
+}
+
+.empty-sub {
+  margin-top: 0.35rem;
+  color: #607d8b;
+  font-size: 0.92rem;
+}
+
+.mockup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.1rem;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.mockup-card {
+  position: relative;
+  display: flex;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #b0bec5;
+  box-shadow: 0 2px 0 rgba(13, 33, 55, 0.04), 0 10px 28px rgba(13, 33, 55, 0.08);
+  overflow: hidden;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.mockup-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 0 rgba(13, 33, 55, 0.05), 0 16px 36px rgba(13, 33, 55, 0.12);
+}
+
+.mockup-card.locked {
+  border-color: #ef9a9a;
+}
+
+.mockup-card.phase-failed {
+  border-color: #e57373;
+  background: linear-gradient(180deg, #fff8f8 0%, #fff 40%);
+}
+
+.mockup-card.phase-deploying {
+  border-color: #ffb74d;
+}
+
+.mockup-card.phase-deployed {
+  border-color: #81c784;
+}
+
+.mockup-card.phase-validated {
+  border-color: #9575cd;
+}
+
+.card-accent {
+  width: 6px;
+  flex-shrink: 0;
+  background: #607d8b;
+}
+
+.phase-created .card-accent { background: #546e7a; }
+.phase-configured .card-accent { background: #1976d2; }
+.phase-validated .card-accent { background: #5e35b1; }
+.phase-deploying .card-accent { background: #ef6c00; }
+.phase-deployed .card-accent { background: #2e7d32; }
+.phase-failed .card-accent { background: #c62828; }
+
+.card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 1rem 1.05rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.card-name {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #0d2137;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phase-badge {
+  font-weight: 700;
+  font-size: 0.72rem;
+  padding: 0.28rem 0.55rem;
+}
+
+.card-style {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #37474f;
+}
+
+.card-meta {
+  font-size: 0.78rem;
+  color: #546e7a;
+  line-height: 1.4;
+}
+
+.card-meta .dot {
+  margin: 0 0.2rem;
+  color: #90a4ae;
+}
+
+.card-status {
+  margin-top: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  background: #eceff1;
+  color: #37474f;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  border-left: 3px solid #78909c;
+}
+
+.card-status.danger {
+  background: #ffebee;
+  color: #b71c1c;
+  border-left-color: #c62828;
+  font-weight: 600;
+}
+
+.card-status.warn {
+  background: #fff3e0;
+  color: #e65100;
+  border-left-color: #ef6c00;
+  font-weight: 600;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #cfd8dc;
+}
+
+@media (max-width: 600px) {
+  .page-title { font-size: 1.65rem; }
+  .mockup-grid { grid-template-columns: 1fr; }
+}
+</style>

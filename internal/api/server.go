@@ -184,7 +184,8 @@ func (s *Server) getMockup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.reconcileFailedPhase(m))
 }
 
-// reconcileFailedPhase upgrades validated/deploying → failed when last deploy job failed.
+// reconcileFailedPhase upgrades validated/deploying → failed when last deploy job failed
+// or the status message still shows a mid-deploy stop (older builds left phase at validated).
 func (s *Server) reconcileFailedPhase(m *mockup.MockUp) *mockup.MockUp {
 	if m == nil || s.deploy == nil {
 		return m
@@ -192,11 +193,18 @@ func (s *Server) reconcileFailedPhase(m *mockup.MockUp) *mockup.MockUp {
 	if m.Status.Phase == mockup.PhaseFailed || m.Status.Phase == mockup.PhaseDeployed {
 		return m
 	}
+	msg := m.Status.Message
 	job, err := s.deploy.GetJob(m.Metadata.ID)
-	if err != nil || job == nil || job.Status != "failed" {
+	jobFailed := err == nil && job != nil && job.Status == "failed"
+	msgFailed := strings.Contains(msg, "Stopped at ")
+	if !jobFailed && !msgFailed {
 		return m
 	}
-	updated, err := s.store.SetPhase(m.Metadata.ID, mockup.PhaseFailed, job.Message)
+	detail := msg
+	if jobFailed && job.Message != "" {
+		detail = job.Message
+	}
+	updated, err := s.store.SetPhase(m.Metadata.ID, mockup.PhaseFailed, detail)
 	if err != nil || updated == nil {
 		return m
 	}
@@ -439,7 +447,17 @@ func (s *Server) getDeploy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cleanMockup(w http.ResponseWriter, r *http.Request) {
-	m, err := s.store.CleanFailed(chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	// Allow Clean when phase was left at validated but job/message still shows failure.
+	if m.Status.Phase != mockup.PhaseFailed && m.Status.Phase != mockup.PhaseDeploying {
+		m = s.reconcileFailedPhase(m)
+	}
+	m, err = s.store.CleanFailed(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
