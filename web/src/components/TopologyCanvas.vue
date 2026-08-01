@@ -18,9 +18,28 @@
         <marker id="arrow-host" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
           <path d="M0,0 L6,3 L0,6 Z" fill="#546e7a" />
         </marker>
+        <marker id="arrow-cluster" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#0277bd" />
+        </marker>
+        <marker id="arrow-hub" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#1565c0" />
+        </marker>
         <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
           <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0b1f3a" flood-opacity="0.18" />
         </filter>
+        <clipPath
+          v-for="n in nodes"
+          :id="`node-clip-${n.id}`"
+          :key="`clip-${n.id}`"
+        >
+          <rect
+            :x="n.x - n.w / 2 + 5"
+            :y="n.y - n.h / 2 + 3"
+            :width="n.w - 10"
+            :height="n.h - 6"
+            :rx="Math.max(2, (n.rx || 8) - 2)"
+          />
+        </clipPath>
       </defs>
 
       <rect width="100%" height="100%" fill="url(#grid)" />
@@ -61,8 +80,10 @@
           :stroke="selectedId === n.id ? '#ff6f00' : '#fff'"
           stroke-width="2"
         />
-        <text :x="n.x" :y="n.y - 8" text-anchor="middle" class="node-title">{{ n.label }}</text>
-        <text :x="n.x" :y="n.y + 12" text-anchor="middle" class="node-sub">{{ n.sub }}</text>
+        <g :clip-path="`url(#node-clip-${n.id})`">
+          <text :x="n.x" :y="n.y - 7" text-anchor="middle" class="node-title">{{ n.label }}</text>
+          <text :x="n.x" :y="n.y + 11" text-anchor="middle" class="node-sub">{{ n.sub }}</text>
+        </g>
       </g>
     </svg>
   </div>
@@ -186,14 +207,16 @@ const allNodes = computed(() => {
     }
 
     const vhosts = enumerateVHosts(m)
-    const spacing = Math.min(100, Math.floor((vbW - 60) / Math.max(vhosts.length, 1)))
-    const startX = Math.max(60, (vbW - (vhosts.length - 1) * spacing) / 2)
+    const spacing = Math.min(118, Math.floor((vbW - 40) / Math.max(vhosts.length, 1)))
+    const startX = Math.max(70, (vbW - (vhosts.length - 1) * spacing) / 2)
     vhosts.forEach((vh, i) => {
       const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === vh.id)
       const fallback = orphan?.x
         ? { x: orphan.x, y: orphan.y }
         : { x: startX + i * spacing, y: yVHost }
       const p = pos(vh.id, fallback)
+      const labelLen = Math.max((vh.label || '').length, (vh.sub || '').length)
+      const w = Math.min(132, Math.max(108, 7.2 * labelLen + 20))
       out.push({
         id: vh.id,
         kind: 'vhost',
@@ -202,7 +225,7 @@ const allNodes = computed(() => {
         parentId: vh.parentId,
         label: vh.label,
         sub: vh.sub,
-        x: p.x, y: p.y, w: 92, h: 50, rx: 8, cls: 'fill-vhost',
+        x: p.x, y: p.y, w, h: 52, rx: 8, cls: 'fill-vhost',
       })
     })
 
@@ -230,21 +253,27 @@ const allNodes = computed(() => {
     const canvas = m.spec.canvas || {}
     const hub = m.spec.hub
     if (hub?.id && !canvas.omitHub) {
-      const hp = pos(hub.id, { x: 260, y: yOCP })
+      const mgmtVh = out.find((n) => n.kind === 'vhost' && n.parentKind === 'hub')
+        || out.find((n) => n.id === 'vhost-hub-0')
+      const hp = pos(hub.id, { x: mgmtVh?.x || 260, y: yOCP })
       out.push({
         id: hub.id, kind: 'hub',
         label: hub.label || 'MGMT-CLUSTER',
-        sub: 'home · 1× SNO · hosts ACM',
+        sub: L === 'all' ? 'home · hosts ACM' : 'home · 1× SNO · hosts ACM',
         x: hp.x, y: hp.y, w: 200, h: 52, rx: 12, cls: 'fill-hub',
       })
     }
     ;(m.spec.clusters || []).forEach((c, i) => {
       const n = Math.max(1, Number(c.count) || 3)
-      const cp = pos(c.id, { x: 560 + (i % 2) * 30, y: yOCP - 20 + i * 70 })
+      const kids = out.filter((vh) => vh.kind === 'vhost' && vh.parentId === c.id)
+      const avgX = kids.length
+        ? kids.reduce((s, vh) => s + vh.x, 0) / kids.length
+        : 560 + (i % 2) * 30
+      const cp = pos(c.id, { x: avgX, y: yOCP - 20 + i * 70 })
       out.push({
         id: c.id, kind: 'cluster',
         label: c.label || c.name,
-        sub: `managed · ${n}× cp/worker VMs`,
+        sub: L === 'all' ? 'managed OCP' : `managed · ${n}× cp/worker VMs`,
         x: cp.x, y: cp.y, w: 210, h: 52, rx: 12, cls: 'fill-cluster',
         clusterIndex: i,
       })
@@ -406,6 +435,32 @@ const edges = computed(() => {
     })
   }
 
+  // Full rack: OCP / cluster payload sits on its vHost(s) — same “down” idea as VyOS → vHost-GW.
+  if (L === 'all') {
+    if (hub) {
+      const mgmt = nodes.value.find((n) => n.kind === 'vhost' && n.parentKind === 'hub')
+        || byId['vhost-hub-0']
+      if (mgmt) {
+        out.push({
+          id: 'hub-vhost-mgmt',
+          d: `M ${hub.x} ${hub.y + 26} L ${mgmt.x} ${mgmt.y - 26}`,
+          stroke: '#1565c0', width: 2.25, dash: null, marker: 'url(#arrow-hub)',
+        })
+      }
+    }
+    nodes.value.filter((n) => n.kind === 'cluster').forEach((c) => {
+      nodes.value
+        .filter((vh) => vh.kind === 'vhost' && vh.parentId === c.id)
+        .forEach((vh) => {
+          out.push({
+            id: `cluster-vhost-${c.id}-${vh.id}`,
+            d: `M ${c.x} ${c.y + 26} L ${vh.x} ${vh.y - 26}`,
+            stroke: '#0277bd', width: 1.85, dash: null, marker: 'url(#arrow-cluster)',
+          })
+        })
+    })
+  }
+
   if (L === 'all' || L === 'cluster' || L === 'app') {
     if (hub && acm) {
       out.push({
@@ -483,7 +538,7 @@ function onClick(n) {
 .topo-node.active rect { filter: brightness(1.05); }
 .fill-infra { fill: #37474f; }
 .fill-adapter { fill: #546e7a; }
-.fill-vhost { fill: #78909c; }
+.fill-vhost { fill: #607d8b; }
 .fill-gateway { fill: #c62828; }
 .fill-appliance { fill: #6d4c41; }
 .fill-hap { fill: #5d4037; }
@@ -496,10 +551,10 @@ function onClick(n) {
 .fill-vnic-wan { fill: #e65100; }
 .fill-vnic-lan { fill: #fb8c00; }
 .band-label {
-  fill: #90a4ae;
-  font-size: 10px;
+  fill: #607d8b;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   pointer-events: none;
 }
 .node-title {
@@ -509,8 +564,9 @@ function onClick(n) {
   pointer-events: none;
 }
 .node-sub {
-  fill: rgba(255, 255, 255, 0.88);
+  fill: rgba(255, 255, 255, 0.92);
   font-size: 9px;
+  font-weight: 500;
   pointer-events: none;
 }
 .link { pointer-events: none; }
