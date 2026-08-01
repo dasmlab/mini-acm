@@ -60,10 +60,12 @@ func infraHostDoc(m *MockUp) map[string]any {
 			},
 		},
 		"spec": map[string]any{
-			"kind": h.Kind, "os": h.OS, "arch": h.Arch,
+			"kind": h.Kind, "hypervisor": h.Hypervisor, "os": h.OS, "arch": h.Arch,
 			"capacity": map[string]any{
 				"cpu": h.CPU, "memoryMiB": h.MemoryMiB, "diskGiB": h.DiskGiB,
 			},
+			"disks": h.Disks,
+			"nics":  h.NICs,
 			"runtime": map[string]any{
 				"provider": m.Spec.Provider, "libvirtURI": h.LibvirtURI,
 				"networkName": h.NetworkName, "storagePool": h.StoragePool,
@@ -71,7 +73,7 @@ func infraHostDoc(m *MockUp) map[string]any {
 			},
 			"sshHost":      h.SSHHost,
 			"acmReference": h.ACMReference,
-			"hostsGuests":  true, // hub + deployment-cluster VMs live here
+			"hostsGuests":  true,
 		},
 	}
 }
@@ -103,6 +105,7 @@ func hubDoc(m *MockUp) map[string]any {
 		"node": map[string]any{
 			"hostname": h.Hostname, "role": "master", "ip": h.IP, "mac": h.MAC,
 			"cpu": h.CPU, "memoryMiB": h.MemoryMiB, "diskGiB": h.DiskGiB,
+			"disks": h.Disks, "nics": h.NICs,
 		},
 	}
 }
@@ -146,6 +149,7 @@ func clusterDoc(m *MockUp, c ClusterNode) map[string]any {
 		"nodes": map[string]any{
 			"count": c.Count, "role": "master",
 			"cpu": c.CPU, "memoryMiB": c.MemoryMiB, "diskGiB": c.DiskGiB,
+			"disks": c.Disks, "nics": c.NICs,
 			"ipBase": c.IPBase, "macPrefix": c.MACPrefix,
 		},
 	}

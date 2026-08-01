@@ -59,23 +59,43 @@ type Spec struct {
 // InfraHostNode is the lab machine that hosts libvirt guests for the ACM demo.
 // Styling/naming echoes ACM BareMetalHost + Metal3 host inventory; platform
 // for guest installs remains agentBareMetal via InfraEnv (not this object).
+// Capacity includes multi-disk / multi-NIC inventory (outer vHOST or BM).
 type InfraHostNode struct {
-	ID           string `json:"id" yaml:"id"`
-	Label        string `json:"label" yaml:"label"` // INFRA-HOST
-	Hostname     string `json:"hostname" yaml:"hostname"`
-	Kind         string `json:"kind" yaml:"kind"`                 // baremetal | nested-vm
-	OS           string `json:"os" yaml:"os"`                     // rhel-9 | rhel-10
-	Arch         string `json:"arch,omitempty" yaml:"arch,omitempty"`
-	CPU          int    `json:"cpu" yaml:"cpu"`                   // host capacity
-	MemoryMiB    int    `json:"memoryMiB" yaml:"memoryMiB"`
-	DiskGiB      int    `json:"diskGiB" yaml:"diskGiB"`
-	LibvirtURI   string `json:"libvirtURI,omitempty" yaml:"libvirtURI,omitempty"`
-	NetworkName  string `json:"networkName,omitempty" yaml:"networkName,omitempty"`
-	StoragePool  string `json:"storagePool,omitempty" yaml:"storagePool,omitempty"`
-	Podman       bool   `json:"podman" yaml:"podman"` // UI/serve often via podman
-	SSHHost      string `json:"sshHost,omitempty" yaml:"sshHost,omitempty"`
-	Notes        string `json:"notes,omitempty" yaml:"notes,omitempty"`
-	ACMReference string `json:"acmReference,omitempty" yaml:"acmReference,omitempty"` // docs pointer
+	ID          string `json:"id" yaml:"id"`
+	Label       string `json:"label" yaml:"label"` // INFRA-HOST
+	Hostname    string `json:"hostname" yaml:"hostname"`
+	Kind        string `json:"kind" yaml:"kind"`               // baremetal | nested-vm
+	Hypervisor  string `json:"hypervisor,omitempty" yaml:"hypervisor,omitempty"` // vmware | kvm | none
+	OS          string `json:"os" yaml:"os"`                   // rhel-9 | rhel-10
+	Arch        string `json:"arch,omitempty" yaml:"arch,omitempty"`
+	CPU         int    `json:"cpu" yaml:"cpu"` // host capacity
+	MemoryMiB   int    `json:"memoryMiB" yaml:"memoryMiB"`
+	DiskGiB     int    `json:"diskGiB" yaml:"diskGiB"` // total; kept in sync with Disks
+	Disks       []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
+	NICs        []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"`
+	LibvirtURI  string `json:"libvirtURI,omitempty" yaml:"libvirtURI,omitempty"`
+	NetworkName string `json:"networkName,omitempty" yaml:"networkName,omitempty"`
+	StoragePool string `json:"storagePool,omitempty" yaml:"storagePool,omitempty"`
+	Podman      bool   `json:"podman" yaml:"podman"` // UI/serve often via podman
+	SSHHost     string `json:"sshHost,omitempty" yaml:"sshHost,omitempty"`
+	Notes       string `json:"notes,omitempty" yaml:"notes,omitempty"`
+	ACMReference string `json:"acmReference,omitempty" yaml:"acmReference,omitempty"`
+}
+
+// DiskSpec describes one block device (vHOST inventory or guest VM disk).
+type DiskSpec struct {
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"` // root, data0, …
+	SizeGiB int    `json:"sizeGiB" yaml:"sizeGiB"`
+	Bus     string `json:"bus,omitempty" yaml:"bus,omitempty"`   // nvme | virtio | sata
+	Role    string `json:"role,omitempty" yaml:"role,omitempty"` // system | data | pool
+}
+
+// NICSpec describes one network interface (flat/bridged MVP: usually one).
+type NICSpec struct {
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"`       // eth0, ens192
+	Model   string `json:"model,omitempty" yaml:"model,omitempty"`     // virtio | e1000e
+	Mode    string `json:"mode,omitempty" yaml:"mode,omitempty"`       // bridged | nat | isolated | libvirt-network
+	Network string `json:"network,omitempty" yaml:"network,omitempty"` // bridge or libvirt net name
 }
 
 type NetworkSpec struct {
@@ -89,18 +109,20 @@ type NetworkSpec struct {
 }
 
 type HubNode struct {
-	ID         string `json:"id" yaml:"id"`
-	Label      string `json:"label" yaml:"label"` // MGMT-CLUSTER
-	Mode       string `json:"mode" yaml:"mode"`
-	Version    string `json:"version" yaml:"version"`
-	Profile    string `json:"profile" yaml:"profile"`
-	Hostname   string `json:"hostname" yaml:"hostname"`
-	IP         string `json:"ip" yaml:"ip"`
-	MAC        string `json:"mac" yaml:"mac"`
-	CPU        int    `json:"cpu" yaml:"cpu"`
-	MemoryMiB  int    `json:"memoryMiB" yaml:"memoryMiB"`
-	DiskGiB    int    `json:"diskGiB" yaml:"diskGiB"`
-	InstallACM bool   `json:"installACM" yaml:"installACM"`
+	ID         string     `json:"id" yaml:"id"`
+	Label      string     `json:"label" yaml:"label"` // MGMT-CLUSTER
+	Mode       string     `json:"mode" yaml:"mode"`
+	Version    string     `json:"version" yaml:"version"`
+	Profile    string     `json:"profile" yaml:"profile"`
+	Hostname   string     `json:"hostname" yaml:"hostname"`
+	IP         string     `json:"ip" yaml:"ip"`
+	MAC        string     `json:"mac" yaml:"mac"`
+	CPU        int        `json:"cpu" yaml:"cpu"`
+	MemoryMiB  int        `json:"memoryMiB" yaml:"memoryMiB"`
+	DiskGiB    int        `json:"diskGiB" yaml:"diskGiB"`
+	Disks      []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
+	NICs       []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"`
+	InstallACM bool       `json:"installACM" yaml:"installACM"`
 }
 
 type ACMNode struct {
@@ -113,19 +135,21 @@ type ACMNode struct {
 }
 
 type ClusterNode struct {
-	ID         string `json:"id" yaml:"id"`
-	Label      string `json:"label" yaml:"label"` // DEPLOYMENT-CLUSTER-X
-	Name       string `json:"name" yaml:"name"`
-	Version    string `json:"version" yaml:"version"`
-	Profile    string `json:"profile" yaml:"profile"`
-	Count      int    `json:"count" yaml:"count"`
-	CPU        int    `json:"cpu" yaml:"cpu"`
-	MemoryMiB  int    `json:"memoryMiB" yaml:"memoryMiB"`
-	DiskGiB    int    `json:"diskGiB" yaml:"diskGiB"`
-	IPBase     string `json:"ipBase" yaml:"ipBase"`
-	MACPrefix  string `json:"macPrefix" yaml:"macPrefix"`
-	APIVIP     string `json:"apiVIP" yaml:"apiVIP"`
-	IngressVIP string `json:"ingressVIP" yaml:"ingressVIP"`
+	ID         string     `json:"id" yaml:"id"`
+	Label      string     `json:"label" yaml:"label"` // DEPLOYMENT-CLUSTER-X
+	Name       string     `json:"name" yaml:"name"`
+	Version    string     `json:"version" yaml:"version"`
+	Profile    string     `json:"profile" yaml:"profile"`
+	Count      int        `json:"count" yaml:"count"`
+	CPU        int        `json:"cpu" yaml:"cpu"`
+	MemoryMiB  int        `json:"memoryMiB" yaml:"memoryMiB"`
+	DiskGiB    int        `json:"diskGiB" yaml:"diskGiB"`
+	Disks      []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
+	NICs       []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"`
+	IPBase     string     `json:"ipBase" yaml:"ipBase"`
+	MACPrefix  string     `json:"macPrefix" yaml:"macPrefix"`
+	APIVIP     string     `json:"apiVIP" yaml:"apiVIP"`
+	IngressVIP string     `json:"ingressVIP" yaml:"ingressVIP"`
 	// Per-cluster lifecycle gaps / status (each DEPLOYMENT-CLUSTER is its own object).
 	Phase           string `json:"phase,omitempty" yaml:"phase,omitempty"` // planned | created | installing | ready | destroy
 	ClusterImageSet string `json:"clusterImageSet,omitempty" yaml:"clusterImageSet,omitempty"`
@@ -228,6 +252,8 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 				Version: "4.18", Profile: "hub-supported",
 				Hostname: "hub-sno", IP: "192.168.130.20", MAC: "52:54:00:13:00:20",
 				CPU: 8, MemoryMiB: 24576, DiskGiB: 200, InstallACM: true,
+				Disks: []DiskSpec{{Name: "vda", SizeGiB: 200, Bus: "virtio", Role: "system"}},
+				NICs:  []NICSpec{{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab"}},
 			},
 			ACM: ACMNode{
 				ID: acmID, Label: "ACM", Enabled: true,
@@ -254,29 +280,43 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 }
 
 func defaultInfraHost(rackName string) InfraHostNode {
-	host := "lab-provisioner"
+	host := "rhel10-vhost-mini-acm"
 	if rackName != "" {
 		host = "prov-" + rackName
 	}
+	// Shaped like a nested RHEL 10 vHOST (e.g. VMware): multi-disk + single bridged NIC.
+	disks := []DiskSpec{
+		{Name: "nvme0", SizeGiB: 250, Bus: "nvme", Role: "system"},
+		{Name: "nvme1", SizeGiB: 400, Bus: "nvme", Role: "pool"},
+	}
 	return InfraHostNode{
 		ID: "infra-host", Label: "INFRA-HOST",
-		Hostname: host, Kind: "baremetal", OS: "rhel-9", Arch: "x86_64",
-		CPU: 32, MemoryMiB: 131072, DiskGiB: 2000,
+		Hostname: host, Kind: "nested-vm", Hypervisor: "vmware",
+		OS: "rhel-10", Arch: "x86_64",
+		CPU: 24, MemoryMiB: 40960,
+		Disks: disks, DiskGiB: sumDiskGiB(disks),
+		NICs: []NICSpec{
+			{Name: "ens192", Model: "e1000e", Mode: "bridged", Network: "bridged-auto"},
+		},
 		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "default",
 		Podman: true,
 		ACMReference: "BareMetalHost / agentBareMetal — this host runs libvirt guests; guests install via InfraEnv",
-		Notes: "RHEL BM or nested VM: runs CLI + podman + libvirt; slices MGMT + DEPLOYMENT cluster VMs for the ACM demo.",
+		Notes: "Nested RHEL 10 vHOST (or BM): runs CLI + podman + libvirt; slices MGMT + DEPLOYMENT cluster VMs. Disks/NICs inventory informs capacity planning.",
 	}
 }
 
 func newClusterNode(index int, version, apiVIP, ingressVIP string) ClusterNode {
 	n := index + 1
 	id := fmt.Sprintf("cluster-%d", index)
+	disks := []DiskSpec{{Name: "vda", SizeGiB: 120, Bus: "virtio", Role: "system"}}
 	return ClusterNode{
 		ID: id, Label: fmt.Sprintf("DEPLOYMENT-CLUSTER-%d", n),
 		Name:    fmt.Sprintf("dev%02d", n),
 		Version: version, Profile: "supported", Count: 3,
-		CPU: 4, MemoryMiB: 16384, DiskGiB: 120,
+		CPU: 4, MemoryMiB: 16384, DiskGiB: 120, Disks: disks,
+		NICs: []NICSpec{
+			{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab"},
+		},
 		IPBase:          fmt.Sprintf("192.168.130.%d", 21+(index*10)),
 		MACPrefix:       fmt.Sprintf("52:54:00:%02x:00", 0x13+index),
 		APIVIP:          apiVIP,
@@ -284,6 +324,26 @@ func newClusterNode(index int, version, apiVIP, ingressVIP string) ClusterNode {
 		Phase:           "planned",
 		ClusterImageSet: ImageSetName(version),
 	}
+}
+
+func sumDiskGiB(disks []DiskSpec) int {
+	total := 0
+	for _, d := range disks {
+		total += d.SizeGiB
+	}
+	return total
+}
+
+func ensureGuestDisksNICs(diskGiB int, network string) ([]DiskSpec, []NICSpec, int) {
+	if diskGiB <= 0 {
+		diskGiB = 120
+	}
+	if network == "" {
+		network = "ocp-lab"
+	}
+	disks := []DiskSpec{{Name: "vda", SizeGiB: diskGiB, Bus: "virtio", Role: "system"}}
+	nics := []NICSpec{{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: network}}
+	return disks, nics, diskGiB
 }
 
 // ImageSetName derives a conventional ClusterImageSet name from an OCP version.
@@ -383,10 +443,13 @@ func normalize(m *MockUp) {
 		ih.Label = "INFRA-HOST"
 	}
 	if ih.Kind == "" {
-		ih.Kind = "baremetal"
+		ih.Kind = "nested-vm"
+	}
+	if ih.Kind == "nested-vm" && ih.Hypervisor == "" {
+		ih.Hypervisor = "vmware"
 	}
 	if ih.OS == "" {
-		ih.OS = "rhel-9"
+		ih.OS = "rhel-10"
 	}
 	if ih.Arch == "" {
 		ih.Arch = "x86_64"
@@ -403,6 +466,35 @@ func normalize(m *MockUp) {
 	if ih.ACMReference == "" {
 		ih.ACMReference = "BareMetalHost / agentBareMetal — this host runs libvirt guests; guests install via InfraEnv"
 	}
+	if len(ih.Disks) == 0 {
+		if ih.DiskGiB > 0 {
+			ih.Disks = []DiskSpec{{Name: "disk0", SizeGiB: ih.DiskGiB, Bus: "virtio", Role: "system"}}
+		} else {
+			ih.Disks = []DiskSpec{
+				{Name: "nvme0", SizeGiB: 250, Bus: "nvme", Role: "system"},
+				{Name: "nvme1", SizeGiB: 400, Bus: "nvme", Role: "pool"},
+			}
+		}
+	}
+	ih.DiskGiB = sumDiskGiB(ih.Disks)
+	if len(ih.NICs) == 0 {
+		ih.NICs = []NICSpec{{Name: "ens192", Model: "virtio", Mode: "bridged", Network: "bridged-auto"}}
+	}
+
+	h := &m.Spec.Hub
+	if len(h.Disks) == 0 || len(h.NICs) == 0 {
+		disks, nics, total := ensureGuestDisksNICs(h.DiskGiB, m.Spec.InfraHost.NetworkName)
+		if len(h.Disks) == 0 {
+			h.Disks = disks
+			h.DiskGiB = total
+		}
+		if len(h.NICs) == 0 {
+			h.NICs = nics
+		}
+	} else {
+		h.DiskGiB = sumDiskGiB(h.Disks)
+	}
+
 	for i := range m.Spec.Clusters {
 		c := &m.Spec.Clusters[i]
 		if c.Phase == "" {
@@ -420,6 +512,18 @@ func normalize(m *MockUp) {
 		}
 		if c.Count == 0 {
 			c.Count = 3
+		}
+		if len(c.Disks) == 0 || len(c.NICs) == 0 {
+			disks, nics, total := ensureGuestDisksNICs(c.DiskGiB, m.Spec.InfraHost.NetworkName)
+			if len(c.Disks) == 0 {
+				c.Disks = disks
+				c.DiskGiB = total
+			}
+			if len(c.NICs) == 0 {
+				c.NICs = nics
+			}
+		} else {
+			c.DiskGiB = sumDiskGiB(c.Disks)
 		}
 	}
 }

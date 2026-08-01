@@ -1,6 +1,6 @@
 <template>
   <q-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" persistent>
-    <q-card style="min-width: 480px; max-width: 560px">
+    <q-card style="min-width: 520px; max-width: 640px">
       <q-card-section class="row items-center">
         <div class="text-h6">{{ title }}</div>
         <q-space />
@@ -9,27 +9,60 @@
 
       <q-card-section v-if="kind === 'infraHost'">
         <q-banner dense rounded class="bg-blue-grey-1 text-blue-grey-10 q-mb-md">
-          RHEL BM or nested VM that runs <strong>podman + libvirt</strong> and slices hub/cluster guest VMs.
-          ACM analogue: BareMetalHost inventory / provisioner — guests still install via InfraEnv (agentBareMetal).
+          Nested RHEL vHOST (or BM) that runs <strong>podman + libvirt</strong>.
+          Inventory disks/NICs here; guests inherit a simpler single-disk / single-NIC shape for MVP.
         </q-banner>
         <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
         <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
         <q-select v-model="draft.kind" :options="infraKinds" outlined dense label="Host kind"
-          class="q-mb-sm" hint="baremetal = physical; nested-vm = VM that itself runs KVM" />
+          class="q-mb-sm" hint="nested-vm = VMware/KVM outer VM with nested virt" />
+        <q-select v-if="draft.kind === 'nested-vm'" v-model="draft.hypervisor" :options="hypervisors"
+          outlined dense label="Outer hypervisor" class="q-mb-sm" />
         <q-select v-model="draft.os" :options="infraOS" outlined dense label="OS" class="q-mb-sm" />
         <q-input v-model="draft.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
-        <q-input v-model="draft.networkName" outlined dense label="Libvirt network" class="q-mb-sm" />
+        <q-input v-model="draft.networkName" outlined dense label="Libvirt guest network" class="q-mb-sm" />
         <q-input v-model="draft.storagePool" outlined dense label="Storage pool" class="q-mb-sm" />
         <q-input v-model="draft.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm" />
         <q-toggle v-model="draft.podman" label="Podman available (UI / tooling)" class="q-mb-md" />
 
         <div class="text-subtitle2 q-mb-xs">Host capacity — vCPU: {{ draft.cpu }}</div>
-        <q-slider v-model="draft.cpu" :min="8" :max="128" :step="4" label class="q-mb-md" />
+        <q-slider v-model="draft.cpu" :min="8" :max="128" :step="2" label class="q-mb-md" />
         <div class="text-subtitle2 q-mb-xs">RAM: {{ draft.memoryMiB }} MiB ({{ (draft.memoryMiB / 1024).toFixed(0) }} GiB)</div>
-        <q-slider v-model="draft.memoryMiB" :min="32768" :max="524288" :step="8192" label class="q-mb-md" />
-        <div class="text-subtitle2 q-mb-xs">Disk: {{ draft.diskGiB }} GiB</div>
-        <q-slider v-model="draft.diskGiB" :min="500" :max="8000" :step="100" label class="q-mb-md" />
-        <q-input v-model="draft.acmReference" outlined dense type="textarea" autogrow label="ACM CRD reference note" class="q-mb-sm" />
+        <q-slider v-model="draft.memoryMiB" :min="16384" :max="262144" :step="1024" label class="q-mb-md" />
+
+        <div class="row items-center q-mb-xs">
+          <div class="text-subtitle2">Disks ({{ (draft.disks || []).length }}) — {{ diskTotal }} GiB total</div>
+          <q-space />
+          <q-btn flat dense size="sm" icon="add" label="Disk" @click="addDisk" />
+        </div>
+        <div v-for="(d, i) in draft.disks || []" :key="'d'+i" class="row q-col-gutter-sm q-mb-sm items-center">
+          <div class="col-3"><q-input v-model="d.name" outlined dense label="Name" /></div>
+          <div class="col-3"><q-input v-model.number="d.sizeGiB" type="number" outlined dense label="GiB" /></div>
+          <div class="col-2"><q-select v-model="d.bus" :options="diskBuses" outlined dense label="Bus" /></div>
+          <div class="col-3"><q-select v-model="d.role" :options="diskRoles" outlined dense label="Role" /></div>
+          <div class="col-1">
+            <q-btn flat dense round icon="delete" size="sm" color="negative"
+              :disable="(draft.disks || []).length <= 1" @click="draft.disks.splice(i, 1)" />
+          </div>
+        </div>
+
+        <div class="row items-center q-mb-xs q-mt-md">
+          <div class="text-subtitle2">NICs ({{ (draft.nics || []).length }}) — MVP: usually one bridged</div>
+          <q-space />
+          <q-btn flat dense size="sm" icon="add" label="NIC" @click="addNic" />
+        </div>
+        <div v-for="(n, i) in draft.nics || []" :key="'n'+i" class="row q-col-gutter-sm q-mb-sm items-center">
+          <div class="col-3"><q-input v-model="n.name" outlined dense label="Name" /></div>
+          <div class="col-2"><q-select v-model="n.model" :options="nicModels" outlined dense label="Model" /></div>
+          <div class="col-3"><q-select v-model="n.mode" :options="nicModes" outlined dense label="Mode" /></div>
+          <div class="col-3"><q-input v-model="n.network" outlined dense label="Network/bridge" /></div>
+          <div class="col-1">
+            <q-btn flat dense round icon="delete" size="sm" color="negative"
+              :disable="(draft.nics || []).length <= 1" @click="draft.nics.splice(i, 1)" />
+          </div>
+        </div>
+
+        <q-input v-model="draft.acmReference" outlined dense type="textarea" autogrow label="ACM CRD reference note" class="q-mb-sm q-mt-md" />
         <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
       </q-card-section>
 
@@ -46,8 +79,12 @@
         <q-slider v-model="draft.cpu" :min="4" :max="16" :step="1" label class="q-mb-md" />
         <div class="text-subtitle2 q-mb-xs">RAM: {{ draft.memoryMiB }} MiB ({{ (draft.memoryMiB / 1024).toFixed(1) }} GiB)</div>
         <q-slider v-model="draft.memoryMiB" :min="8192" :max="49152" :step="1024" label class="q-mb-md" />
-        <div class="text-subtitle2 q-mb-xs">Disk: {{ draft.diskGiB }} GiB</div>
-        <q-slider v-model="draft.diskGiB" :min="100" :max="400" :step="10" label class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">Disk / node: {{ draft.diskGiB }} GiB</div>
+        <q-slider v-model="draft.diskGiB" :min="100" :max="400" :step="10" label class="q-mb-sm"
+          @update:model-value="syncGuestDisk" />
+        <div class="text-caption text-grey-7 q-mb-md">
+          Guest shape: 1× virtio disk · 1× NIC (libvirt-network) — extend disks/NICs later
+        </div>
         <q-toggle v-model="draft.installACM" label="Install ACM after hub OCP" />
       </q-card-section>
 
@@ -80,7 +117,11 @@
         <div class="text-subtitle2 q-mb-xs">RAM / node: {{ draft.memoryMiB }} MiB ({{ (draft.memoryMiB / 1024).toFixed(1) }} GiB)</div>
         <q-slider v-model="draft.memoryMiB" :min="8192" :max="32768" :step="1024" label class="q-mb-md" />
         <div class="text-subtitle2 q-mb-xs">Disk / node: {{ draft.diskGiB }} GiB</div>
-        <q-slider v-model="draft.diskGiB" :min="80" :max="200" :step="10" label class="q-mb-md" />
+        <q-slider v-model="draft.diskGiB" :min="80" :max="200" :step="10" label class="q-mb-sm"
+          @update:model-value="syncGuestDisk" />
+        <div class="text-caption text-grey-7 q-mb-md">
+          Per-node: 1× virtio disk · 1× flat NIC on lab net
+        </div>
         <q-input v-model="draft.discoveryISO" outlined dense label="Discovery ISO path (optional)" />
       </q-card-section>
 
@@ -106,8 +147,13 @@ const draft = reactive({})
 const hubProfiles = ['hub-supported', 'hub-lab']
 const clusterProfiles = ['supported', 'lab-small']
 const phaseOptions = ['planned', 'created', 'installing', 'ready', 'destroy']
-const infraKinds = ['baremetal', 'nested-vm']
-const infraOS = ['rhel-9', 'rhel-10']
+const infraKinds = ['nested-vm', 'baremetal']
+const infraOS = ['rhel-10', 'rhel-9']
+const hypervisors = ['vmware', 'kvm', 'none']
+const diskBuses = ['nvme', 'virtio', 'sata']
+const diskRoles = ['system', 'data', 'pool']
+const nicModels = ['virtio', 'e1000e']
+const nicModes = ['bridged', 'nat', 'isolated', 'libvirt-network']
 
 const title = computed(() => {
   if (props.kind === 'infraHost') return 'Edit INFRA-HOST'
@@ -116,16 +162,41 @@ const title = computed(() => {
   return 'Edit DEPLOYMENT-CLUSTER'
 })
 
+const diskTotal = computed(() =>
+  (draft.disks || []).reduce((n, d) => n + (Number(d.sizeGiB) || 0), 0),
+)
+
 watch(
   () => [props.modelValue, props.node],
   () => {
     if (props.modelValue && props.node) {
       Object.keys(draft).forEach((k) => delete draft[k])
       Object.assign(draft, JSON.parse(JSON.stringify(props.node)))
+      if (!draft.disks) draft.disks = []
+      if (!draft.nics) draft.nics = []
     }
   },
   { immediate: true },
 )
+
+function addDisk() {
+  if (!draft.disks) draft.disks = []
+  draft.disks.push({ name: `disk${draft.disks.length}`, sizeGiB: 100, bus: 'nvme', role: 'data' })
+}
+
+function addNic() {
+  if (!draft.nics) draft.nics = []
+  draft.nics.push({ name: `eth${draft.nics.length}`, model: 'virtio', mode: 'bridged', network: 'bridged-auto' })
+}
+
+function syncGuestDisk(size) {
+  draft.diskGiB = size
+  if (!draft.disks || !draft.disks.length) {
+    draft.disks = [{ name: 'vda', sizeGiB: size, bus: 'virtio', role: 'system' }]
+  } else {
+    draft.disks[0].sizeGiB = size
+  }
+}
 
 function applyHubProfile(p) {
   if (p === 'hub-lab') {
@@ -137,6 +208,7 @@ function applyHubProfile(p) {
     draft.memoryMiB = 24576
     draft.diskGiB = 200
   }
+  syncGuestDisk(draft.diskGiB)
 }
 
 function applyClusterProfile(p) {
@@ -149,6 +221,7 @@ function applyClusterProfile(p) {
     draft.memoryMiB = 16384
     draft.diskGiB = 120
   }
+  syncGuestDisk(draft.diskGiB)
 }
 
 function onVersion(v) {
@@ -157,6 +230,9 @@ function onVersion(v) {
 }
 
 function save() {
+  if (props.kind === 'infraHost') {
+    draft.diskGiB = diskTotal.value
+  }
   emit('save', { kind: props.kind, node: { ...draft } })
   emit('update:modelValue', false)
 }

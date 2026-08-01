@@ -90,13 +90,15 @@ const nodes = computed(() => {
   const infra = m.spec.infraHost
   if (infra?.id) {
     const ip = pos(infra.id, { x: 140, y: 480 })
-    const kind = infra.kind === 'nested-vm' ? 'nested' : 'BM'
+    const kind = infra.kind === 'nested-vm' ? (infra.hypervisor || 'nested') : 'BM'
+    const disks = (infra.disks || []).length
+    const nics = (infra.nics || []).length
     out.push({
       id: infra.id,
       kind: 'infraHost',
       label: infra.label || 'INFRA-HOST',
-      sub: `${infra.os || 'rhel'} · ${kind} · libvirt`,
-      x: ip.x, y: ip.y, w: 200, h: 64, rx: 8, cls: 'fill-infra',
+      sub: `${infra.os || 'rhel'} · ${kind} · ${disks}disk/${nics}nic`,
+      x: ip.x, y: ip.y, w: 210, h: 64, rx: 8, cls: 'fill-infra',
     })
   }
 

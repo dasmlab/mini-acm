@@ -35,8 +35,10 @@
                 <tbody>
                   <tr><td>Label</td><td>{{ mockup.spec.infraHost.label }}</td></tr>
                   <tr><td>Hostname</td><td>{{ mockup.spec.infraHost.hostname }}</td></tr>
-                  <tr><td>Kind / OS</td><td>{{ mockup.spec.infraHost.kind }} · {{ mockup.spec.infraHost.os }}</td></tr>
-                  <tr><td>Capacity</td><td>{{ mockup.spec.infraHost.cpu }}c / {{ mockup.spec.infraHost.memoryMiB }}MiB / {{ mockup.spec.infraHost.diskGiB }}GiB</td></tr>
+                  <tr><td>Kind / OS</td><td>{{ mockup.spec.infraHost.kind }}{{ mockup.spec.infraHost.hypervisor ? ' / ' + mockup.spec.infraHost.hypervisor : '' }} · {{ mockup.spec.infraHost.os }}</td></tr>
+                  <tr><td>Capacity</td><td>{{ mockup.spec.infraHost.cpu }}c / {{ Math.round(mockup.spec.infraHost.memoryMiB/1024) }}G</td></tr>
+                  <tr><td>Disks</td><td>{{ (mockup.spec.infraHost.disks || []).map(d => `${d.name||'disk'} ${d.sizeGiB}G ${d.bus||''}`).join(' · ') || mockup.spec.infraHost.diskGiB + ' GiB' }}</td></tr>
+                  <tr><td>NICs</td><td>{{ (mockup.spec.infraHost.nics || []).map(n => `${n.name||'nic'} ${n.mode||''}`).join(' · ') || '1× bridged' }}</td></tr>
                   <tr><td>Libvirt</td><td><code>{{ mockup.spec.infraHost.libvirtURI }}</code> · {{ mockup.spec.infraHost.networkName }}</td></tr>
                   <tr><td>Podman</td><td>{{ mockup.spec.infraHost.podman ? 'yes' : 'no' }}</td></tr>
                 </tbody>
@@ -44,13 +46,19 @@
             </div>
             <div class="col-12 col-md-6">
               <q-input v-model="mockup.spec.infraHost.hostname" outlined dense label="Hostname" class="q-mb-sm" />
-              <q-select v-model="mockup.spec.infraHost.kind" :options="['baremetal', 'nested-vm']"
+              <q-select v-model="mockup.spec.infraHost.kind" :options="['nested-vm', 'baremetal']"
                 outlined dense label="Host kind" class="q-mb-sm" />
-              <q-select v-model="mockup.spec.infraHost.os" :options="['rhel-9', 'rhel-10']"
+              <q-select v-if="mockup.spec.infraHost.kind === 'nested-vm'"
+                v-model="mockup.spec.infraHost.hypervisor" :options="['vmware', 'kvm', 'none']"
+                outlined dense label="Outer hypervisor" class="q-mb-sm" />
+              <q-select v-model="mockup.spec.infraHost.os" :options="['rhel-10', 'rhel-9']"
                 outlined dense label="OS" class="q-mb-sm" />
               <q-input v-model="mockup.spec.infraHost.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm"
                 hint="MVP gap — where you ssh to run mini-acm / virsh" />
               <q-input v-model="mockup.spec.infraHost.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
+              <div class="text-caption text-grey-7 q-mb-xs">
+                Disks/NICs: edit on Topology → INFRA-HOST (defaults match a nested RHEL 10 vHOST: 250G+400G NVMe, 1× bridged).
+              </div>
               <q-banner dense rounded class="bg-grey-2 text-caption">
                 Derive emits <code>out/infra-host.yaml</code> (kind InfraHost) with hub/cluster YAMLs.
               </q-banner>

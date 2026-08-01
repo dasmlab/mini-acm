@@ -21,8 +21,20 @@ func TestCreateDerive(t *testing.T) {
 	if m.Spec.InfraHost.Label != "INFRA-HOST" || m.Spec.InfraHost.ID == "" {
 		t.Fatalf("infra host: %+v", m.Spec.InfraHost)
 	}
-	if m.Spec.InfraHost.Kind != "baremetal" {
+	if m.Spec.InfraHost.Kind != "nested-vm" {
 		t.Fatalf("infra kind: %s", m.Spec.InfraHost.Kind)
+	}
+	if m.Spec.InfraHost.OS != "rhel-10" {
+		t.Fatalf("infra os: %s", m.Spec.InfraHost.OS)
+	}
+	if len(m.Spec.InfraHost.Disks) < 2 {
+		t.Fatalf("want multi-disk infra inventory, got %v", m.Spec.InfraHost.Disks)
+	}
+	if len(m.Spec.InfraHost.NICs) < 1 {
+		t.Fatalf("want at least one NIC, got %v", m.Spec.InfraHost.NICs)
+	}
+	if m.Spec.InfraHost.DiskGiB != 650 {
+		t.Fatalf("disk total want 650, got %d", m.Spec.InfraHost.DiskGiB)
 	}
 	if len(m.Spec.Clusters) != 2 {
 		t.Fatalf("want 2 default clusters, got %d", len(m.Spec.Clusters))

@@ -45,10 +45,13 @@
               <q-btn flat dense round icon="edit" @click="editInfra" />
             </q-card-section>
             <q-card-section class="q-pt-none text-caption text-grey-8">
-              Capacity {{ mockup.spec.infraHost.cpu }}c /
-              {{ Math.round(mockup.spec.infraHost.memoryMiB / 1024) }}G —
-              guests: {{ guestVMCount }} VMs (hub SNO + cluster nodes).
-              ACM ref: BareMetalHost / agentBareMetal (InfraEnv on hub).
+              {{ mockup.spec.infraHost.cpu }}c /
+              {{ Math.round(mockup.spec.infraHost.memoryMiB / 1024) }}G ·
+              {{ (mockup.spec.infraHost.disks || []).map(d => d.sizeGiB + 'G').join('+') || mockup.spec.infraHost.diskGiB + 'G' }}
+              ({{ (mockup.spec.infraHost.disks || []).length || 1 }} disks) ·
+              {{ (mockup.spec.infraHost.nics || []).length || 1 }} NIC
+              {{ mockup.spec.infraHost.nics?.[0]?.mode ? '(' + mockup.spec.infraHost.nics[0].mode + ')' : '' }}.
+              Guests: {{ guestVMCount }} VMs. ACM ref: BareMetalHost / InfraEnv.
             </q-card-section>
           </q-card>
 

@@ -29,19 +29,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Resolve GHCR token
+        env:
+          SECRET_PAT: ${{ secrets.DASMLAB_GHCR_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           token=""
           if [ -f "/home/dasm/gh_token" ]; then
             token="$(tr -d '\n\r' < /home/dasm/gh_token)"
           fi
-          if [ -z "${token}" ]; then
-            token="${{ secrets.DASMLAB_GHCR_PAT }}"
+          if [ -z "${token}" ] && [ -n "${SECRET_PAT:-}" ]; then
+            token="${SECRET_PAT}"
           fi
           if [ -z "${token}" ] && [ -f "/home/dasm/gh-pat" ]; then
             # shellcheck disable=SC1091
             source /home/dasm/gh-pat
             token="${DASMLAB_GHCR_PAT:-${GH_TOKEN:-}}"
+          fi
+          if [ -z "${token}" ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+            token="${GITHUB_TOKEN}"
           fi
           if [ -z "${token}" ]; then
             echo "ERROR: GHCR token not set"
@@ -118,14 +124,15 @@ jobs:
       - name: GitOps sync
         env:
           VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+          SECRET_PAT: ${{ secrets.DASMLAB_GHCR_PAT }}
         run: |
           set -euo pipefail
           DEPLOY_TOKEN=""
           if [ -f "/home/dasm/gh_token" ]; then
             DEPLOY_TOKEN="$(tr -d '\n\r' < /home/dasm/gh_token)"
           fi
-          if [ -z "${DEPLOY_TOKEN}" ]; then
-            DEPLOY_TOKEN="${{ secrets.DASMLAB_GHCR_PAT }}"
+          if [ -z "${DEPLOY_TOKEN}" ] && [ -n "${SECRET_PAT:-}" ]; then
+            DEPLOY_TOKEN="${SECRET_PAT}"
           fi
           if [ -z "${DEPLOY_TOKEN}" ]; then
             echo "ERROR: deploy token not set"
