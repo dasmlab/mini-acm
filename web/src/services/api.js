@@ -91,6 +91,12 @@ export async function deriveMockup(id) {
   return data
 }
 
+/** LAB/TEST/DEV ONLY — ephemeral SSH/pull-secret/ISO stubs under mockups/<id>/dev-lab/ */
+export async function seedDevLab(id) {
+  const { data } = await api.post(`/mockups/${id}/seed-dev-lab`)
+  return data
+}
+
 export async function validateMockup(id, mockup) {
   // Body = teaching/topology-only check (no phase advance). Omit body to ValidatePlan + persist.
   if (mockup) {

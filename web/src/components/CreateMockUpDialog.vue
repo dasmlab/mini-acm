@@ -53,7 +53,7 @@
           >
             <q-icon name="bolt" size="22px" color="orange-9" />
             <span class="path-title">Use defaults</span>
-            <span class="path-desc">Fast click-through — seed rack, derive YAML, then Validate → Deploy.</span>
+            <span class="path-desc">DEV click-through — throwaway SSH/pull-secret/ISO stubs, derive YAML, then Validate → Deploy.</span>
           </button>
           <button
             type="button"
@@ -194,6 +194,9 @@ async function submit() {
       payload.baseDomain = form.baseDomain
       payload.provider = form.provider
     }
+    if (form.path === 'defaults') {
+      payload.seedDevLab = true
+    }
     const m = await createMockup(payload)
     const id = m.metadata?.id
     emit('update:modelValue', false)
@@ -204,8 +207,8 @@ async function submit() {
         await deriveMockup(id)
         Notify.create({
           type: 'positive',
-          message: `${form.name} ready with defaults (Configured) — Validate then Deploy when inventory is green.`,
-          timeout: 6000,
+          message: `${form.name} ready with DEV lab seeds (Configured) — Validate then Deploy when inventory is green. Throwaway keys under mockups/<id>/dev-lab.`,
+          timeout: 7000,
         })
       } catch (e) {
         Notify.create({ type: 'warning', message: `Created, but derive failed: ${e.response?.data || e.message}` })

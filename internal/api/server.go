@@ -91,6 +91,7 @@ func (s *Server) routes() chi.Router {
 			r.Post("/mockups/{id}/clusters", s.addCluster)
 			r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
 			r.Post("/mockups/{id}/derive", s.derive)
+			r.Post("/mockups/{id}/seed-dev-lab", s.seedDevLab)
 			r.Post("/mockups/{id}/validate", s.validateMockup)
 			r.Post("/mockups/{id}/deploy", s.deployMockup)
 			r.Get("/mockups/{id}/deploy", s.getDeploy)
@@ -267,6 +268,15 @@ func (s *Server) derive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"paths": paths})
+}
+
+func (s *Server) seedDevLab(w http.ResponseWriter, r *http.Request) {
+	m, err := s.store.SeedDevLabGaps(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {

@@ -86,13 +86,13 @@ type CanvasSpec struct {
 
 // CanvasNode is a free-form teaching object (vHost or appliance payload).
 type CanvasNode struct {
-	ID            string  `json:"id" yaml:"id"`
-	Kind          string  `json:"kind" yaml:"kind"` // vhost | appliance
-	Label         string  `json:"label" yaml:"label"`
-	ApplianceType string  `json:"applianceType,omitempty" yaml:"applianceType,omitempty"` // vyos | haproxy | other
+	ID            string `json:"id" yaml:"id"`
+	Kind          string `json:"kind" yaml:"kind"` // vhost | appliance
+	Label         string `json:"label" yaml:"label"`
+	ApplianceType string `json:"applianceType,omitempty" yaml:"applianceType,omitempty"` // vyos | haproxy | other
 	// RunsOn: appliance → vHost id it sits on (middleware / payload on the guest).
-	RunsOn string `json:"runsOn,omitempty" yaml:"runsOn,omitempty"`
-	Notes  string `json:"notes,omitempty" yaml:"notes,omitempty"`
+	RunsOn string  `json:"runsOn,omitempty" yaml:"runsOn,omitempty"`
+	Notes  string  `json:"notes,omitempty" yaml:"notes,omitempty"`
 	X      float64 `json:"x,omitempty" yaml:"x,omitempty"`
 	Y      float64 `json:"y,omitempty" yaml:"y,omitempty"`
 }
@@ -104,9 +104,9 @@ type InfraHostNode struct {
 	ID           string     `json:"id" yaml:"id"`
 	Label        string     `json:"label" yaml:"label"` // MACHINE-HOST / INFRA-HOST
 	Hostname     string     `json:"hostname" yaml:"hostname"`
-	Kind         string     `json:"kind" yaml:"kind"`                                     // baremetal | nested-vm
-	Hypervisor   string     `json:"hypervisor,omitempty" yaml:"hypervisor,omitempty"`     // vmware | kvm | none
-	OS           string     `json:"os" yaml:"os"`                                         // rhel-9 | rhel-10
+	Kind         string     `json:"kind" yaml:"kind"`                                 // baremetal | nested-vm
+	Hypervisor   string     `json:"hypervisor,omitempty" yaml:"hypervisor,omitempty"` // vmware | kvm | none
+	OS           string     `json:"os" yaml:"os"`                                     // rhel-9 | rhel-10
 	Arch         string     `json:"arch,omitempty" yaml:"arch,omitempty"`
 	CPU          int        `json:"cpu" yaml:"cpu"`
 	MemoryMiB    int        `json:"memoryMiB" yaml:"memoryMiB"`
@@ -269,6 +269,9 @@ type CreateReq struct {
 	Notes      string `json:"notes"`
 	Genre      string `json:"genre"`
 	Style      string `json:"style"`
+	// SeedDevLab writes throwaway SSH/pull-secret/ISO stubs under mockups/<id>/dev-lab/
+	// for hands-free "Use defaults" Validate → Deploy click-through (LAB/TEST/DEV ONLY).
+	SeedDevLab bool `json:"seedDevLab"`
 }
 
 func (s *Store) Create(req CreateReq) (*MockUp, error) {
@@ -292,6 +295,13 @@ func (s *Store) Create(req CreateReq) (*MockUp, error) {
 	m.Spec.Style = style
 	if err := s.save(m); err != nil {
 		return nil, err
+	}
+	if req.SeedDevLab {
+		m, err = s.SeedDevLabGaps(id)
+		if err != nil {
+			_ = s.Delete(id)
+			return nil, fmt.Errorf("seed DEV lab gaps: %w", err)
+		}
 	}
 	return m, nil
 }
@@ -459,11 +469,11 @@ func defaultInfraHost(rackName string) InfraHostNode {
 			{Name: "ens224", Model: "e1000e", Mode: "host-only", Network: "VMnet12", Role: "host-only"},
 		},
 		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "default",
-		Podman:  true,
-		SSHHost: "192.168.1.142",
-		SSHUser: "dasm",
+		Podman:       true,
+		SSHHost:      "192.168.1.142",
+		SSHUser:      "dasm",
 		ACMReference: "BareMetalHost analogue — libvirtd host; guests install via InfraEnv (agentBareMetal)",
-		Notes: "RHEL MACHINE HOST (BM or nested). Bridged NIC for SSH/mgmt; host-only VMnet12 optional. Libvirt LAN is behind VYOS-GW, not on VMnet12. Large disk = guest pool. Link Inventory entry for probe/orchestrate.",
+		Notes:        "RHEL MACHINE HOST (BM or nested). Bridged NIC for SSH/mgmt; host-only VMnet12 optional. Libvirt LAN is behind VYOS-GW, not on VMnet12. Large disk = guest pool. Link Inventory entry for probe/orchestrate.",
 	}
 }
 
