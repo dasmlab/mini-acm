@@ -58,10 +58,11 @@
 
       <div class="legend q-mb-md">
         <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-host" /> Host / adapter</span>
-        <span v-if="layer === 'all'" class="legend-item"><i class="swatch swatch-gw" /> Gateway (egress)</span>
-        <span class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt</span>
-        <span class="legend-item"><i class="swatch swatch-dep" /> Deployment</span>
-        <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
+        <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-vhost" /> vHost</span>
+        <span v-if="layer === 'all' || layer === 'infra'" class="legend-item"><i class="swatch swatch-gw" /> VyOS (RTR)</span>
+        <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt OCP</span>
+        <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-dep" /> Deployment OCP</span>
+        <span v-if="layer === 'all' || layer === 'cluster' || layer === 'app'" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
         <span class="legend-hint">{{ layerHint }}</span>
       </div>
 
@@ -115,7 +116,9 @@
               <div class="inspector-actions">
                 <q-btn
                   v-if="selectedMeta.editable !== false"
-                  color="primary" unelevated label="Edit details" icon="edit" @click="openEditor"
+                  color="primary" unelevated
+                  :label="selected.kind === 'vhost' ? 'Edit parent' : 'Edit details'"
+                  icon="edit" @click="openEditor"
                 />
                 <q-btn
                   v-if="selected.kind === 'cluster' && mockup.spec.clusters.length > 1"
@@ -180,6 +183,7 @@ import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import {
   getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, imageSetName,
 } from 'src/services/api'
+import { enumerateVHosts } from 'src/lib/vhosts'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -195,33 +199,39 @@ const layer = ref('all')
 let layoutTimer = null
 
 const layerOptions = [
-  { id: 'all', title: 'Full rack', sub: 'Incl. egress / GW' },
-  { id: 'infra', title: 'Infrastructure', sub: 'Host · VMs · adapter' },
+  { id: 'all', title: 'Full rack', sub: 'All bands' },
+  { id: 'infra', title: 'Infrastructure', sub: 'Host · adapter · vHosts' },
   { id: 'cluster', title: 'Cluster mgmt', sub: 'ACM · home + managed' },
+  { id: 'app', title: 'Application', sub: 'ACM payload' },
 ]
 
 const layerHint = computed(() => {
   if (layer.value === 'infra') {
-    return 'VMs that run the OS / back clusters · adapter is IaaS (libvirt today)'
+    return 'Adapter provisions vHosts · VyOS (RTR) runs on the GW vHost'
   }
   if (layer.value === 'cluster') {
-    return 'ACM lives on mgmt (does not fully self-manage yet) · governs deployments'
+    return 'OCP objects — ACM on mgmt governs deployments (not full self-mgmt yet)'
   }
-  return 'GW / vSwitch / way-out only here · HAProxy belongs with cluster path later'
+  if (layer.value === 'app') {
+    return 'ACM today · Ansible / GitOps payloads can land on clusters later'
+  }
+  return 'Infra vHosts below · OCP + ACM above'
 })
 
-/** Which object-list buckets each view shows. Hub + deployments appear in both infra (as VMs) and cluster (as OCP). */
+/** Object-list filters per view. Infra lists vHosts (not OCP cluster boxes). */
 const LAYER_ROWS = {
-  infra: new Set(['infraHost', 'adapter', 'hub', 'cluster']),
+  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway']),
   cluster: new Set(['hub', 'cluster', 'acm']),
-  // gateway only in full rack — egress / vSwitch, not meat-and-potatoes cluster talk
+  app: new Set(['acm']),
 }
 
 const objectSummary = computed(() => {
   if (!mockup.value) return ''
-  const n = mockup.value.spec.clusters?.length || 0
+  const clusters = mockup.value.spec.clusters || []
+  const n = clusters.length
+  const guests = enumerateVHosts(mockup.value).length
   const p = mockup.value.spec.provider || 'libvirt'
-  return `adapter ${p} · 1 host · 1 gw · 1 mgmt · ${n} deployment`
+  return `adapter ${p} · ${guests} vHosts · 1 mgmt · ${n} deployment`
 })
 
 const objectRows = computed(() => {
@@ -229,50 +239,67 @@ const objectRows = computed(() => {
   if (!m?.spec) return []
   const L = layer.value
   const rows = []
-  const ih = m.spec.infraHost
-  if (ih?.id) {
+
+  if (L === 'infra' || L === 'all') {
+    const ih = m.spec.infraHost
+    if (ih?.id) {
+      rows.push({
+        id: ih.id, kind: 'infraHost',
+        title: ih.label || 'MACHINE-HOST',
+        sub: 'HW host · libvirt / podman',
+      })
+    }
     rows.push({
-      id: ih.id, kind: 'infraHost',
-      title: ih.label || 'MACHINE-HOST',
-      sub: 'HW host · libvirt / podman',
+      id: 'adapter', kind: 'adapter',
+      title: 'ADAPTER',
+      sub: `${m.spec.provider || 'libvirt'} IaaS`,
     })
+    for (const vh of enumerateVHosts(m)) {
+      rows.push({
+        id: vh.id, kind: 'vhost',
+        title: vh.label,
+        sub: vh.sub,
+        parentKind: vh.parentKind,
+        parentId: vh.parentId,
+      })
+    }
+    const gw = m.spec.gateway
+    if (gw?.id) {
+      rows.push({
+        id: gw.id, kind: 'gateway',
+        title: gw.label || 'VYOS-GW',
+        sub: 'RTR / NF on vHost-GW',
+      })
+    }
   }
-  rows.push({
-    id: 'adapter', kind: 'adapter',
-    title: 'ADAPTER',
-    sub: `${m.spec.provider || 'libvirt'} IaaS`,
-  })
-  const gw = m.spec.gateway
-  if (gw?.id) {
-    rows.push({
-      id: gw.id, kind: 'gateway',
-      title: gw.label || 'VYOS-GW',
-      sub: 'Egress · vSwitch / WAN',
-    })
+
+  if (L === 'cluster' || L === 'all') {
+    if (m.spec.hub?.id) {
+      rows.push({
+        id: m.spec.hub.id, kind: 'hub',
+        title: m.spec.hub.label || 'MGMT-CLUSTER',
+        sub: 'Home cluster · hosts ACM',
+      })
+    }
+    for (const c of m.spec.clusters || []) {
+      rows.push({
+        id: c.id, kind: 'cluster',
+        title: c.label || c.name,
+        sub: `Managed OCP · ${c.count || 3} nodes · ${c.phase || 'planned'}`,
+      })
+    }
   }
-  if (m.spec.hub?.id) {
-    rows.push({
-      id: m.spec.hub.id, kind: 'hub',
-      title: m.spec.hub.label || 'MGMT-CLUSTER',
-      sub: L === 'infra' ? 'Guest VM · runs OCP' : 'Home cluster · hosts ACM',
-    })
+
+  if (L === 'app' || L === 'cluster' || L === 'all') {
+    if (m.spec.acm?.id) {
+      rows.push({
+        id: m.spec.acm.id, kind: 'acm',
+        title: m.spec.acm.label || 'ACM',
+        sub: m.spec.acm.enabled ? 'Payload · governs spokes' : 'Disabled',
+      })
+    }
   }
-  for (const c of m.spec.clusters || []) {
-    rows.push({
-      id: c.id, kind: 'cluster',
-      title: c.label || c.name,
-      sub: L === 'infra'
-        ? `Guest VMs · ${c.phase || 'planned'}`
-        : `Managed OCP · ${c.phase || 'planned'}`,
-    })
-  }
-  if (m.spec.acm?.id) {
-    rows.push({
-      id: m.spec.acm.id, kind: 'acm',
-      title: m.spec.acm.label || 'ACM',
-      sub: m.spec.acm.enabled ? 'Governs deployments · not full self-mgmt yet' : 'Disabled',
-    })
-  }
+
   if (L === 'all') return rows
   const allow = LAYER_ROWS[L]
   return allow ? rows.filter((r) => allow.has(r.kind)) : rows
@@ -288,6 +315,15 @@ const selectedNodeData = computed(() => {
       mode: 'local',
       notes: 'mini-acm (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
     }
+  }
+  if (k === 'vhost') {
+    const vh = enumerateVHosts(mockup.value).find((x) => x.id === selected.value.id)
+    if (!vh) return null
+    let parent = null
+    if (vh.parentKind === 'gateway') parent = mockup.value.spec.gateway
+    else if (vh.parentKind === 'hub') parent = mockup.value.spec.hub
+    else parent = mockup.value.spec.clusters.find((c) => c.id === vh.parentId)
+    return { ...vh, parent }
   }
   if (k === 'infraHost') return mockup.value.spec.infraHost
   if (k === 'gateway') return mockup.value.spec.gateway
@@ -306,8 +342,8 @@ const selectedMeta = computed(() => {
     return {
       classLabel: 'IaaS adapter',
       title: 'ADAPTER',
-      roleLine: 'Role: provision VMs via provider plugin',
-      acmLine: 'Layer: infra — not an OCP/ACM object',
+      roleLine: 'Role: provision guest vHosts via provider plugin',
+      acmLine: 'Fans out to GW / mgmt / deployment vHosts',
       editable: false,
       facts: [
         { k: 'Type', v: d.provider },
@@ -316,12 +352,32 @@ const selectedMeta = computed(() => {
       ],
     }
   }
+  if (n.kind === 'vhost') {
+    const p = d.parent || {}
+    return {
+      classLabel: 'Guest vHost',
+      title: d.label,
+      roleLine: d.role === 'gw'
+        ? 'Role: VM that runs the VyOS RTR / network function'
+        : d.role === 'hub'
+          ? 'Role: VM that runs the mgmt OCP OS (SNO)'
+          : 'Role: VM that backs a deployment OCP node',
+      acmLine: 'Infrastructure — OCP/ACM objects live in Cluster / App views',
+      editable: true,
+      editParent: true,
+      facts: [
+        { k: 'Parent', v: p.label || p.name || d.parentId },
+        { k: 'Size', v: p.cpu ? `${p.cpu}c / ${Math.round((p.memoryMiB || 0) / 1024)}G` : '—' },
+        { k: 'Payload', v: d.role === 'gw' ? 'VyOS (RTR)' : 'OCP node OS' },
+      ],
+    }
+  }
   if (n.kind === 'infraHost') {
     return {
       classLabel: 'Host machine',
       title: d.label || 'MACHINE-HOST',
       roleLine: 'Role: HW (or nested) node running libvirtd / podman',
-      acmLine: 'Layer: infra',
+      acmLine: 'Infrastructure',
       editable: true,
       facts: [
         { k: 'SSH', v: d.sshHost || '—' },
@@ -334,10 +390,10 @@ const selectedMeta = computed(() => {
   }
   if (n.kind === 'gateway') {
     return {
-      classLabel: 'Edge gateway',
+      classLabel: 'Network function (RTR)',
       title: d.label || 'VYOS-GW',
-      roleLine: 'Role: vSwitch / NAT / way out via real host',
-      acmLine: 'Shown in Full rack — not part of cluster-mgmt view',
+      roleLine: 'Role: VyOS OS / RTR payload on vHost-GW',
+      acmLine: 'Infra picture — sits on the GW vHost from the adapter',
       editable: true,
       facts: [
         { k: 'LAN', v: `${d.lanCIDR || '—'} · ${d.lanIP || ''}` },
@@ -348,29 +404,26 @@ const selectedMeta = computed(() => {
   }
   if (n.kind === 'hub') {
     return {
-      classLabel: layer.value === 'infra' ? 'Guest VM (mgmt)' : 'Home cluster',
+      classLabel: 'Home cluster',
       title: d.label || 'MGMT-CLUSTER',
-      roleLine: layer.value === 'infra'
-        ? 'Role: VM(s) that run the mgmt OCP OS'
-        : 'Role: OCP that hosts ACM (ACM does not fully self-manage yet)',
-      acmLine: layer.value === 'cluster'
-        ? 'Cluster mgmt · ACM home — sovereign / multi-tenant story later'
-        : 'Infrastructure · OS-backing guests',
+      roleLine: 'Role: OCP that hosts ACM (ACM does not fully self-manage yet)',
+      acmLine: 'Cluster mgmt · sovereign / multi-tenant story later',
       editable: true,
       facts: [
         { k: 'Hostname', v: d.hostname || '—' },
         { k: 'Profile', v: `${d.profile || '—'} · OCP ${d.version || '—'}` },
         { k: 'Size', v: `${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G / ${d.diskGiB}G` },
+        { k: 'vHosts', v: '1 (SNO)' },
       ],
     }
   }
   if (n.kind === 'acm') {
     return {
-      classLabel: 'Cluster management',
+      classLabel: 'Application payload',
       title: d.label || 'ACM',
       roleLine: 'Role: MultiClusterHub on mgmt — governs deployments',
       acmLine: d.enabled
-        ? 'Self-management / sovereign hub is a later posture — today ACM lives here, manages spokes'
+        ? 'Today: lives on mgmt, manages spokes · self-mgmt later'
         : 'Disabled',
       editable: true,
       facts: [
@@ -380,17 +433,15 @@ const selectedMeta = computed(() => {
     }
   }
   return {
-    classLabel: layer.value === 'infra' ? 'Guest VMs (deployment)' : 'Managed cluster',
+    classLabel: 'Managed cluster',
     title: d.label || d.name,
-    roleLine: layer.value === 'infra'
-      ? 'Role: VM set that backs a deployment OCP'
-      : 'Role: Spoke OCP · lifecycle owned by ACM',
-    acmLine: layer.value === 'cluster' ? 'Cluster mgmt · managed by hub ACM' : 'Infrastructure · OS-backing guests',
+    roleLine: 'Role: Spoke OCP · lifecycle owned by ACM',
+    acmLine: 'Cluster mgmt · backed by guest vHosts in Infrastructure',
     editable: true,
     facts: [
       { k: 'Name', v: d.name || '—' },
       { k: 'Phase', v: d.phase || 'planned' },
-      { k: 'Nodes', v: `${d.count}× ${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G` },
+      { k: 'vHosts', v: `${d.count || 3}× ${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G` },
       { k: 'API VIP', v: d.apiVIP || '—' },
     ],
   }
@@ -418,6 +469,14 @@ function selectById(id, kind) {
 function openEditor() {
   const d = selectedNodeData.value
   if (!d || !selected.value || selected.value.kind === 'adapter') return
+  // vHosts edit their parent object (gateway / hub / cluster)
+  if (selected.value.kind === 'vhost') {
+    if (!d.parent) return
+    editKind.value = d.parentKind
+    editNode.value = { ...d.parent }
+    editOpen.value = true
+    return
+  }
   editKind.value = selected.value.kind
   editNode.value = { ...d }
   editOpen.value = true
@@ -542,7 +601,8 @@ onMounted(load)
   border-radius: 2px;
 }
 .swatch-host { background: #37474f; }
-.swatch-gw { background: #e65100; }
+.swatch-vhost { background: #78909c; }
+.swatch-gw { background: #c62828; }
 .swatch-mgmt { background: #1a237e; }
 .swatch-dep { background: #1565c0; }
 .swatch-acm { background: #00838f; }
@@ -701,7 +761,9 @@ onMounted(load)
   flex-shrink: 0;
 }
 .dot-infraHost { background: #37474f; }
-.dot-gateway { background: #e65100; }
+.dot-adapter { background: #546e7a; }
+.dot-vhost { background: #78909c; }
+.dot-gateway { background: #c62828; }
 .dot-hub { background: #1a237e; }
 .dot-acm { background: #00838f; }
 .dot-cluster { background: #1565c0; }

@@ -27,15 +27,14 @@ Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
 
 ## Topology views (UI)
 
-Two meat-and-potatoes views (plus Full rack):
-
 | View | Shows | Point |
 |------|-------|--------|
-| **Infrastructure** | MACHINE-HOST, ADAPTER, guest VMs (mgmt + deployments) | VMs / OS that back clusters. Adapter = IaaS (libvirt today; Azure Spot later). |
-| **Cluster mgmt** | ACM + home mgmt OCP + managed deployments | ACM lives on mgmt; governs spokes. Does **not** fully self-manage the home cluster yet — sovereign / multi-tenant posture is later. |
-| **Full rack** | Everything above + **VYOS-GW** | GW / vSwitch / way-out through the real host. Not part of cluster talk. |
+| **Infrastructure** | MACHINE-HOST → ADAPTER → **vHosts** · **VyOS** stacked on GW vHost | Adapter provisions guests: 1× GW, 1× MGMT (SNO), `count`× per deployment (default 3). VyOS is the RTR/NF **payload** on the GW vHost (not a peer of the host). |
+| **Cluster mgmt** | ACM + home mgmt OCP + managed deployments | OCP objects. ACM lives on mgmt; governs spokes. Not full self-mgmt yet. |
+| **Application** | ACM | Payload today; Ansible / GitOps / test apps can land on clusters later. |
+| **Full rack** | All bands | Infra vHosts below · OCP + ACM above. |
 
-**Later (not modeled as addables yet):** HAProxy (or similar) on the *cluster* path for VIPs; test/app payloads on deployment clusters; ACM self-management.
+**Later:** HAProxy on the cluster path; ACM self-management / sovereign; first-class editable vHost inventory (today vHosts are derived from gateway/hub/`clusters[].count`).
 
 The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mini-acm’s container runtime talks to libvirt:
 

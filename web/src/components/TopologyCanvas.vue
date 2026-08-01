@@ -25,7 +25,6 @@
 
       <rect width="100%" height="100%" fill="url(#grid)" />
 
-      <!-- Layer bands (all / or single-layer wash) -->
       <g v-for="b in bands" :key="b.id">
         <rect :x="0" :y="b.y" :width="vbW" :height="b.h" :fill="b.fill" opacity="0.55" />
         <text :x="14" :y="b.y + 18" class="band-label">{{ b.label }}</text>
@@ -47,7 +46,7 @@
         v-for="n in nodes"
         :key="n.id"
         class="topo-node"
-        :class="{ active: selectedId === n.id, dim: n.dim }"
+        :class="{ active: selectedId === n.id }"
         filter="url(#softShadow)"
         @mousedown.prevent="onDown($event, n)"
         @click.stop="onClick(n)"
@@ -71,48 +70,53 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { enumerateVHosts } from 'src/lib/vhosts'
 
 const props = defineProps({
   mockup: { type: Object, required: true },
   selectedId: { type: String, default: null },
-  /** all | infra | cluster */
+  /** all | infra | cluster | app */
   layer: { type: String, default: 'all' },
 })
 const emit = defineEmits(['select', 'move'])
 
-const vbW = 780
-const vbH = 600
+const vbW = 960
+const vbH = 640
 const dragging = ref(null)
 const moved = ref(false)
 
-/** Views are not a strict stack: hub + deployment guests appear in both infra (VMs) and cluster (OCP). Gateway is Full-rack only (egress). */
+/**
+ * Infra = host + adapter + guest vHosts (+ VyOS NF on the GW vHost).
+ * Cluster = OCP objects + ACM governance.
+ * App = ACM payload only.
+ * Full rack = both bands (GW/vSwitch story lives with infra vHosts).
+ */
 const VIEW_KINDS = {
-  infra: new Set(['infraHost', 'adapter', 'hub', 'cluster']),
+  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway']),
   cluster: new Set(['hub', 'cluster', 'acm']),
+  app: new Set(['acm']),
 }
 
 const bands = computed(() => {
   if (props.layer === 'infra') {
-    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: 'INFRASTRUCTURE · host · adapter · guest VMs' }]
+    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: 'INFRASTRUCTURE · host · adapter · vHosts · VyOS on GW vHost' }]
   }
   if (props.layer === 'cluster') {
     return [{ id: 'cluster', y: 0, h: vbH, fill: '#e3f2fd', label: 'CLUSTER MGMT · ACM on home · governs deployments' }]
   }
+  if (props.layer === 'app') {
+    return [{ id: 'app', y: 0, h: vbH, fill: '#e0f2f1', label: 'APPLICATION · ACM payload (others later)' }]
+  }
   return [
-    { id: 'cluster', y: 0, h: 280, fill: '#e3f2fd', label: 'CLUSTER MGMT · ACM · OCP' },
-    { id: 'infra', y: 280, h: 320, fill: '#eceff1', label: 'INFRASTRUCTURE · host · adapter · VMs · GW (egress)' },
+    { id: 'app', y: 0, h: 120, fill: '#e0f2f1', label: 'APP · ACM payload' },
+    { id: 'cluster', y: 120, h: 160, fill: '#e3f2fd', label: 'CLUSTER · OCP (mgmt + deployments)' },
+    { id: 'infra', y: 280, h: 360, fill: '#eceff1', label: 'INFRA · host · adapter · vHosts · VyOS (RTR) on GW vHost' },
   ]
 })
 
 const pos = (id, fallback) => {
   const p = props.mockup?.layout?.nodes?.[id]
   return p ? { x: p.x, y: p.y } : fallback
-}
-
-const layerDefaultY = {
-  acm: 70,
-  cluster: 200,
-  infra: 470,
 }
 
 function inView(kind) {
@@ -126,72 +130,105 @@ const allNodes = computed(() => {
   const out = []
   const provider = m.spec.provider || 'libvirt'
   const L = props.layer
-  const infraMode = L === 'infra'
+  const showInfraStuff = L === 'all' || L === 'infra'
+  const showClusterStuff = L === 'all' || L === 'cluster'
+  const showAppStuff = L === 'all' || L === 'app' || L === 'cluster'
 
-  const infra = m.spec.infraHost
-  if (infra?.id) {
-    const ip = pos(infra.id, { x: 140, y: layerDefaultY.infra })
+  const yHost = L === 'infra' ? 560 : 580
+  const yAdapter = L === 'infra' ? 460 : 500
+  const yVHost = L === 'infra' ? 300 : 380
+  const yVyOS = L === 'infra' ? 210 : 300
+  const yOCP = L === 'cluster' ? 280 : 200
+  const yACM = L === 'app' || L === 'cluster' ? 120 : 70
+
+  if (showInfraStuff) {
+    const infra = m.spec.infraHost
+    if (infra?.id) {
+      const ip = pos(infra.id, { x: 120, y: yHost })
+      out.push({
+        id: infra.id, kind: 'infraHost',
+        label: infra.label || 'MACHINE-HOST',
+        sub: `HW · ${infra.os || 'rhel'}`,
+        x: ip.x, y: ip.y, w: 200, h: 56, rx: 8, cls: 'fill-infra',
+      })
+    }
+
+    const ap = pos('adapter', { x: 360, y: yAdapter })
     out.push({
-      id: infra.id, kind: 'infraHost',
-      label: infra.label || 'MACHINE-HOST',
-      sub: `HW · ${infra.os || 'rhel'}`,
-      x: ip.x, y: ip.y, w: 200, h: 60, rx: 8, cls: 'fill-infra',
+      id: 'adapter', kind: 'adapter',
+      label: 'ADAPTER',
+      sub: `${provider} · IaaS`,
+      x: ap.x, y: ap.y, w: 150, h: 50, rx: 8, cls: 'fill-adapter',
+    })
+
+    const vhosts = enumerateVHosts(m)
+    const spacing = Math.min(108, Math.floor((vbW - 80) / Math.max(vhosts.length, 1)))
+    const startX = Math.max(70, (vbW - (vhosts.length - 1) * spacing) / 2)
+    vhosts.forEach((vh, i) => {
+      const fallback = { x: startX + i * spacing, y: yVHost }
+      const p = pos(vh.id, fallback)
+      out.push({
+        id: vh.id,
+        kind: 'vhost',
+        role: vh.role,
+        parentKind: vh.parentKind,
+        parentId: vh.parentId,
+        label: vh.label,
+        sub: vh.sub,
+        x: p.x, y: p.y, w: 96, h: 52, rx: 8, cls: 'fill-vhost',
+      })
+    })
+
+    // VyOS = network function (RTR) / OS payload sitting on the GW vHost
+    const gw = m.spec.gateway
+    const gwVHost = out.find((n) => n.id === 'vhost-gw')
+    if (gw?.id && gwVHost) {
+      const gp = pos(gw.id, { x: gwVHost.x, y: yVyOS })
+      // Keep stacked on the vHost X unless user dragged VyOS elsewhere
+      const x = Math.abs(gp.x - gwVHost.x) < 5 ? gwVHost.x : gp.x
+      out.push({
+        id: gw.id, kind: 'gateway',
+        label: gw.label || 'VYOS-GW',
+        sub: `RTR · ${gw.lanCIDR || 'LAN'}`,
+        x, y: gp.y, w: 120, h: 48, rx: 10, cls: 'fill-gateway',
+      })
+    }
+  }
+
+  if (showClusterStuff) {
+    const hub = m.spec.hub
+    if (hub?.id) {
+      const hp = pos(hub.id, { x: 260, y: yOCP })
+      out.push({
+        id: hub.id, kind: 'hub',
+        label: hub.label || 'MGMT-CLUSTER',
+        sub: 'home · hosts ACM',
+        x: hp.x, y: hp.y, w: 188, h: 52, rx: 12, cls: 'fill-hub',
+      })
+    }
+    ;(m.spec.clusters || []).forEach((c, i) => {
+      const cp = pos(c.id, { x: 560 + (i % 2) * 30, y: yOCP - 20 + i * 70 })
+      out.push({
+        id: c.id, kind: 'cluster',
+        label: c.label || c.name,
+        sub: 'managed OCP',
+        x: cp.x, y: cp.y, w: 200, h: 52, rx: 12, cls: 'fill-cluster',
+        clusterIndex: i,
+      })
     })
   }
 
-  const ap = pos('adapter', { x: 360, y: layerDefaultY.infra + 10 })
-  out.push({
-    id: 'adapter', kind: 'adapter',
-    label: 'ADAPTER',
-    sub: `${provider} · IaaS`,
-    x: ap.x, y: ap.y, w: 150, h: 54, rx: 8, cls: 'fill-adapter',
-  })
-
-  const gw = m.spec.gateway
-  if (gw?.id) {
-    const gp = pos(gw.id, { x: 560, y: layerDefaultY.infra })
-    out.push({
-      id: gw.id, kind: 'gateway',
-      label: gw.label || 'VYOS-GW',
-      sub: `egress · ${gw.lanCIDR || 'LAN'}`,
-      x: gp.x, y: gp.y, w: 160, h: 56, rx: 10, cls: 'fill-gateway',
-    })
-  }
-
-  const hub = m.spec.hub
-  if (hub?.id) {
-    const hubY = infraMode ? 220 : (L === 'cluster' ? 260 : layerDefaultY.cluster)
-    const hp = pos(hub.id, { x: 220, y: hubY })
-    out.push({
-      id: hub.id, kind: 'hub',
-      label: hub.label || 'MGMT-CLUSTER',
-      sub: infraMode ? 'guest VM · OCP OS' : 'home · hosts ACM',
-      x: hp.x, y: hp.y, w: 188, h: 56, rx: 12, cls: 'fill-hub',
-    })
-  }
-
-  ;(m.spec.clusters || []).forEach((c, i) => {
-    const baseY = infraMode ? 220 : (L === 'cluster' ? 260 : layerDefaultY.cluster)
-    const cp = pos(c.id, { x: 480 + (i % 2) * 40, y: baseY + (i * 70) })
-    out.push({
-      id: c.id, kind: 'cluster',
-      label: c.label || c.name,
-      sub: infraMode ? 'guest VMs · OCP OS' : 'managed OCP',
-      x: cp.x, y: cp.y, w: 200, h: 56, rx: 12, cls: 'fill-cluster',
-      clusterIndex: i,
-    })
-  })
-
-  const acm = m.spec.acm
-  if (acm?.id) {
-    const acmY = L === 'cluster' ? 110 : layerDefaultY.acm
-    const acp = pos(acm.id, { x: 220, y: acmY })
-    out.push({
-      id: acm.id, kind: 'acm',
-      label: acm.label || 'ACM',
-      sub: acm.enabled ? 'governs spokes' : 'off',
-      x: acp.x, y: acp.y, w: 140, h: 56, rx: 12, cls: 'fill-acm',
-    })
+  if (showAppStuff) {
+    const acm = m.spec.acm
+    if (acm?.id) {
+      const acp = pos(acm.id, { x: 260, y: yACM })
+      out.push({
+        id: acm.id, kind: 'acm',
+        label: acm.label || 'ACM',
+        sub: acm.enabled ? 'payload · governs' : 'off',
+        x: acp.x, y: acp.y, w: 140, h: 52, rx: 12, cls: 'fill-acm',
+      })
+    }
   }
 
   return out
@@ -204,83 +241,50 @@ const edges = computed(() => {
   const infra = byId[props.mockup?.spec?.infraHost?.id]
   const adapter = byId.adapter
   const gw = byId[props.mockup?.spec?.gateway?.id]
+  const gwVHost = byId['vhost-gw']
   const hub = byId[props.mockup?.spec?.hub?.id]
   const acm = byId[props.mockup?.spec?.acm?.id]
   const out = []
   const L = props.layer
 
-  // Infra: host ↔ adapter ↔ guest VMs (provisioning). No ACM edges.
   if (L === 'all' || L === 'infra') {
     if (infra && adapter) {
       out.push({
         id: 'infra-adapter',
-        d: curve(infra.x + 90, infra.y, adapter.x - 70, adapter.y),
+        d: curve(infra.x + 90, infra.y - 20, adapter.x - 60, adapter.y + 10),
         stroke: '#546e7a', width: 2, dash: '5 3', marker: 'url(#arrow-host)',
       })
     }
-    if (adapter && hub) {
+    // Adapter fans out to every guest vHost
+    nodes.value.filter((n) => n.kind === 'vhost').forEach((vh) => {
+      if (!adapter) return
       out.push({
-        id: 'adapter-hub',
-        d: curve(adapter.x, adapter.y - 28, hub.x, hub.y + 28),
-        stroke: '#546e7a', width: 1.5, dash: '6 4', marker: 'url(#arrow-host)',
+        id: `adapter-${vh.id}`,
+        d: curve(adapter.x, adapter.y - 24, vh.x, vh.y + 26),
+        stroke: '#546e7a', width: 1.35, dash: '5 3', marker: 'url(#arrow-host)',
+      })
+    })
+    // VyOS (RTR) sits on the GW vHost
+    if (gw && gwVHost) {
+      out.push({
+        id: 'vyos-on-vhost',
+        d: `M ${gw.x} ${gw.y + 24} L ${gwVHost.x} ${gwVHost.y - 26}`,
+        stroke: '#e65100', width: 2.25, dash: null, marker: 'url(#arrow)',
       })
     }
-    ;(props.mockup?.spec?.clusters || []).forEach((c) => {
-      const n = byId[c.id]
-      if (adapter && n) {
-        out.push({
-          id: `adapter-${c.id}`,
-          d: curve(adapter.x + 40, adapter.y - 28, n.x - 40, n.y + 28),
-          stroke: '#546e7a', width: 1.25, dash: '6 4', marker: 'url(#arrow-host)',
-        })
-      }
-    })
   }
 
-  // Full rack only: GW / egress / vSwitch path
-  if (L === 'all') {
-    if (adapter && gw) {
-      out.push({
-        id: 'adapter-gw',
-        d: curve(adapter.x + 70, adapter.y, gw.x - 70, gw.y),
-        stroke: '#546e7a', width: 1.5, dash: '5 3', marker: 'url(#arrow-host)',
-      })
-    }
-    if (infra && gw) {
-      out.push({
-        id: 'infra-gw',
-        d: curve(infra.x, infra.y - 30, gw.x - 40, gw.y + 20),
-        stroke: '#78909c', width: 1.25, dash: '4 3', marker: 'url(#arrow-host)',
-      })
-    }
-    if (gw && hub) {
-      out.push({
-        id: 'gw-hub',
-        d: curve(gw.x - 40, gw.y - 28, hub.x + 40, hub.y + 28),
-        stroke: '#ef6c00', width: 2, dash: null, marker: 'url(#arrow)',
-      })
-    }
-    ;(props.mockup?.spec?.clusters || []).forEach((c) => {
-      const n = byId[c.id]
-      if (gw && n) {
-        out.push({
-          id: `gw-${c.id}`,
-          d: curve(gw.x, gw.y - 28, n.x, n.y + 28),
-          stroke: '#ef6c00', width: 1.5, dash: '4 3', marker: 'url(#arrow)',
-        })
-      }
-    })
-  }
-
-  // Cluster mgmt: ACM on home → governs deployments (not self-mgmt yet)
-  if (L === 'all' || L === 'cluster') {
-    if (hub && acm) {
+  if (L === 'all' || L === 'cluster' || L === 'app') {
+    if (hub && acm && (L === 'all' || L === 'cluster' || L === 'app')) {
       out.push({
         id: 'hub-acm',
-        d: curve(hub.x, hub.y - 28, acm.x, acm.y + 28),
+        d: curve(hub.x, hub.y - 26, acm.x, acm.y + 26),
         stroke: '#00838f', width: 2.5, dash: null, marker: 'url(#arrow)',
       })
     }
+  }
+
+  if (L === 'all' || L === 'cluster') {
     ;(props.mockup?.spec?.clusters || []).forEach((c) => {
       const n = byId[c.id]
       if (acm && n) {
@@ -303,9 +307,6 @@ function curve(x1, y1, x2, y2) {
 }
 
 function onDown(ev, n) {
-  if (n.kind === 'adapter') {
-    // still allow select; drag position stored under layout.nodes.adapter
-  }
   dragging.value = { id: n.id, ox: ev.clientX, oy: ev.clientY, sx: n.x, sy: n.y }
   moved.value = false
 }
@@ -317,8 +318,8 @@ function onMove(ev) {
   if (Math.abs(dx) + Math.abs(dy) > 3) moved.value = true
   emit('move', {
     id: dragging.value.id,
-    x: Math.max(70, Math.min(vbW - 70, dragging.value.sx + dx)),
-    y: Math.max(40, Math.min(vbH - 40, dragging.value.sy + dy)),
+    x: Math.max(50, Math.min(vbW - 50, dragging.value.sx + dx)),
+    y: Math.max(36, Math.min(vbH - 36, dragging.value.sy + dy)),
   })
 }
 
@@ -338,20 +339,20 @@ function onClick(n) {
   border-radius: 8px;
   background: #fafbfd;
   overflow: hidden;
-  min-height: 560px;
+  min-height: 600px;
 }
 .topo-svg {
   width: 100%;
-  height: 560px;
+  height: 600px;
   display: block;
   cursor: grab;
 }
 .topo-node { cursor: pointer; }
 .topo-node.active rect { filter: brightness(1.05); }
-.topo-node.dim { opacity: 0.35; }
 .fill-infra { fill: #37474f; }
 .fill-adapter { fill: #546e7a; }
-.fill-gateway { fill: #e65100; }
+.fill-vhost { fill: #78909c; }
+.fill-gateway { fill: #c62828; }
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }
@@ -364,13 +365,13 @@ function onClick(n) {
 }
 .node-title {
   fill: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   pointer-events: none;
 }
 .node-sub {
   fill: rgba(255, 255, 255, 0.88);
-  font-size: 10px;
+  font-size: 9px;
   pointer-events: none;
 }
 .link { pointer-events: none; }
