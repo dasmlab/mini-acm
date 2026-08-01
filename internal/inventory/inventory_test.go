@@ -78,6 +78,8 @@ func TestProbeSeedIfReachable(t *testing.T) {
 	}
 	list, _ := s.List()
 	list[0].IdentityFile = filepath.Join(home, ".ssh", "id_ecdsa")
+	list[0].SSHHost = "10.50.0.3"
+	list[0].Stretched = false
 	_ = s.Save(list[0])
 	res, err := s.Probe(list[0].ID)
 	if err != nil {
@@ -86,5 +88,28 @@ func TestProbeSeedIfReachable(t *testing.T) {
 	if !res.AuthOK {
 		t.Fatalf("expected auth OK: %+v", res)
 	}
+	if res.Facts["libvirtd"] == "" || res.Facts["virsh"] == "" {
+		t.Fatalf("libvirt facts empty (bash -lc regression?): %+v", res.Facts)
+	}
+	if !res.LibvirtReady {
+		t.Fatalf("expected libvirt ready: msg=%s facts=%v issues=%v", res.Message, res.Facts, res.Issues)
+	}
+	// second probe must stay ready (no flap)
+	res2, err := s.Probe(list[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res2.LibvirtReady || res2.Host.Status != StatusReachable {
+		t.Fatalf("re-probe flapped: status=%s msg=%s facts=%v", res2.Host.Status, res2.Message, res2.Facts)
+	}
 	t.Logf("probe: %s facts=%v", res.Message, res.Facts)
+}
+
+func TestMustActive(t *testing.T) {
+	if !mustActive("active") || !mustActive("inactive\nactive") {
+		t.Fatal("mustActive true cases")
+	}
+	if mustActive("") || mustActive("inactive") || mustActive("failed") {
+		t.Fatal("mustActive false cases")
+	}
 }

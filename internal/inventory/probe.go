@@ -1,7 +1,6 @@
 package inventory
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -123,74 +122,76 @@ func probeHost(h *MachineHost) *ProbeResult {
 	res.AuthOK = true
 
 	run := func(cmd string) (string, error) {
-		session, err := client.NewSession()
-		if err != nil {
-			return "", err
-		}
-		defer session.Close()
-		var buf bytes.Buffer
-		session.Stdout = &buf
-		session.Stderr = &buf
-		if err := session.Run(cmd); err != nil {
-			return strings.TrimSpace(buf.String()), err
-		}
-		return strings.TrimSpace(buf.String()), nil
+		return sshOutput(client, cmd)
 	}
 
 	if out, err := run("hostname"); err == nil && out != "" {
 		res.Facts["hostname"] = out
 	}
-	if out, err := run("cat /etc/os-release 2>/dev/null | grep -E '^(NAME|VERSION)=' | tr '\\n' ' '"); err == nil && out != "" {
+	if out, err := run(`cat /etc/os-release 2>/dev/null | grep -E '^(NAME|VERSION)=' | tr '\n' ' '`); err == nil && out != "" {
 		res.Facts["os"] = out
 	}
 	if out, err := run("uname -m"); err == nil && out != "" {
 		res.Facts["arch"] = out
 	}
 
+	// One remote script for libvirt/podman — avoids empty-stdout flaps from many short SSH execs.
+	libvirtScript := `
+set +e
+LV=$(/usr/bin/systemctl is-active libvirtd 2>/dev/null)
+if [ "$LV" != "active" ]; then
+  LV=$(/usr/bin/systemctl is-active virtqemud 2>/dev/null)
+fi
+if [ "$LV" != "active" ]; then
+  LV=$(/usr/bin/systemctl is-active libvirt 2>/dev/null)
+fi
+[ -n "$LV" ] || LV=unknown
+if test -x /usr/bin/virsh || command -v virsh >/dev/null 2>&1; then
+  if /usr/bin/virsh version >/dev/null 2>&1; then V=ok; else V=broken; fi
+else
+  V=missing
+fi
+if test -S /var/run/libvirt/libvirt-sock; then S=yes; else S=no; fi
+if command -v podman >/dev/null 2>&1; then P=$(podman --version 2>/dev/null); else P=missing; fi
+printf 'libvirtd=%s\nvirsh=%s\nsocket=%s\npodman=%s\n' "$LV" "$V" "$S" "$P"
+`
 	libvirtActive := false
-	if out, err := run("systemctl is-active libvirtd 2>/dev/null || systemctl is-active libvirt 2>/dev/null || true"); err == nil {
-		res.Facts["libvirtd"] = out
-		if out == "active" {
-			libvirtActive = true
-		}
-	}
 	virshOK := false
-	if out, err := run(`if command -v virsh >/dev/null 2>&1; then virsh list --name 2>/dev/null | wc -l; else echo missing; fi`); err == nil {
-		out = strings.TrimSpace(out)
-		res.Facts["virsh"] = out
-		if out != "" && out != "missing" && !strings.Contains(out, "missing") {
-			virshOK = true
-		}
-	}
-	if out, err := run("test -S /var/run/libvirt/libvirt-sock && echo yes || echo no"); err == nil {
-		res.Facts["libvirtSocket"] = strings.TrimSpace(out)
-	}
-
-	// RHEL 10 may expose modular virt* units; treat any active libvirt daemon as OK.
-	if !libvirtActive {
-		if out, err := run(`systemctl is-active virtqemud 2>/dev/null || true`); err == nil && strings.TrimSpace(out) == "active" {
-			libvirtActive = true
-			res.Facts["libvirtd"] = "virtqemud:" + strings.TrimSpace(out)
-		}
-	}
-
+	sockOK := false
 	podmanOK := false
-	if out, err := run("command -v podman >/dev/null && podman --version || echo missing"); err == nil {
-		res.Facts["podman"] = out
-		if out != "missing" && !strings.Contains(strings.ToLower(out), "missing") {
-			podmanOK = true
-			res.PodmanReady = true
+	out, err := run(libvirtScript)
+	if err != nil {
+		res.Facts["libvirtProbeError"] = truncate(err.Error()+" "+out, 200)
+	} else if strings.TrimSpace(out) == "" {
+		res.Facts["libvirtProbeError"] = "empty libvirt probe output"
+	} else {
+		for _, line := range strings.Split(out, "\n") {
+			line = strings.TrimSpace(line)
+			switch {
+			case strings.HasPrefix(line, "libvirtd="):
+				v := strings.TrimPrefix(line, "libvirtd=")
+				res.Facts["libvirtd"] = v
+				libvirtActive = v == "active"
+			case strings.HasPrefix(line, "virsh="):
+				v := strings.TrimPrefix(line, "virsh=")
+				res.Facts["virsh"] = v
+				virshOK = v == "ok"
+			case strings.HasPrefix(line, "socket="):
+				v := strings.TrimPrefix(line, "socket=")
+				res.Facts["libvirtSocket"] = v
+				sockOK = v == "yes"
+			case strings.HasPrefix(line, "podman="):
+				v := strings.TrimPrefix(line, "podman=")
+				res.Facts["podman"] = v
+				if v != "" && v != "missing" && !strings.Contains(strings.ToLower(v), "missing") {
+					podmanOK = true
+					res.PodmanReady = true
+				}
+			}
 		}
 	}
 
-	res.LibvirtReady = libvirtActive && virshOK
-	if !res.LibvirtReady && libvirtActive && res.Facts["libvirtSocket"] == "yes" && virshOK {
-		res.LibvirtReady = true
-	}
-	// Prefer active+virsh; socket+virsh also OK
-	if !res.LibvirtReady {
-		res.LibvirtReady = virshOK && (libvirtActive || res.Facts["libvirtSocket"] == "yes")
-	}
+	res.LibvirtReady = virshOK && (libvirtActive || sockOK)
 
 	if !virshOK {
 		res.Issues = append(res.Issues, ProbeIssue{
@@ -199,7 +200,7 @@ func probeHost(h *MachineHost) *ProbeResult {
 			Fixable:   true,
 			FixAction: FixInstallLibvirt,
 		})
-	} else if !libvirtActive {
+	} else if !libvirtActive && !sockOK {
 		res.Issues = append(res.Issues, ProbeIssue{
 			ID: "libvirtd-inactive", Severity: "error",
 			Message:    "libvirtd is not active — enable and start the service",
