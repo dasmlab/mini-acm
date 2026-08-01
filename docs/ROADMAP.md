@@ -36,6 +36,12 @@ Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
 
 **Later:** HAProxy on the cluster path; ACM self-management / sovereign; first-class editable vHost inventory (today vHosts are derived from gateway/hub/`clusters[].count`).
 
+### Free-form / creative canvas (teaching)
+
+- Toggle **Guided** vs **Free-form** on Topology.
+- Free-form: no constrained relation edges by default; drop orphan **vHosts**, **HAProxy** / **other** appliances; hide rack pieces; **Validate** collects missing payload / mgmt / ACM / spoke errors in one pass.
+- **Not supported (stub):** promoting a free-form canvas into a guided/constrained MockUp — rebuild in Guided if you want derive/deploy. Track as later improvement.
+
 The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mini-acm’s container runtime talks to libvirt:
 
 ```text

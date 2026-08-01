@@ -70,13 +70,15 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { enumerateVHosts } from 'src/lib/vhosts'
+import { enumerateVHosts, enumerateAppliances } from 'src/lib/vhosts'
 
 const props = defineProps({
   mockup: { type: Object, required: true },
   selectedId: { type: String, default: null },
   /** all | infra | cluster | app */
   layer: { type: String, default: 'all' },
+  /** free-form: no constrained edges unless showRelations */
+  freeForm: { type: Boolean, default: false },
 })
 const emit = defineEmits(['select', 'move'])
 
@@ -92,14 +94,19 @@ const moved = ref(false)
  * Full rack = both bands (GW/vSwitch story lives with infra vHosts).
  */
 const VIEW_KINDS = {
-  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway']),
+  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway', 'appliance']),
   cluster: new Set(['hub', 'cluster', 'acm']),
   app: new Set(['acm']),
 }
 
+const showRelations = computed(() => {
+  if (!props.freeForm) return true
+  return !!props.mockup?.spec?.canvas?.showRelations
+})
+
 const bands = computed(() => {
   if (props.layer === 'infra') {
-    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: 'INFRASTRUCTURE · host · adapter · vHosts · VyOS on GW vHost' }]
+    return [{ id: 'infra', y: 0, h: vbH, fill: '#eceff1', label: props.freeForm ? 'FREE-FORM · drop vHosts / appliances' : 'INFRASTRUCTURE · host · adapter · vHosts · VyOS on GW vHost' }]
   }
   if (props.layer === 'cluster') {
     return [{ id: 'cluster', y: 0, h: vbH, fill: '#e3f2fd', label: 'CLUSTER MGMT · ACM on home · governs deployments' }]
@@ -110,7 +117,7 @@ const bands = computed(() => {
   return [
     { id: 'app', y: 0, h: 120, fill: '#e0f2f1', label: 'APP · ACM payload' },
     { id: 'cluster', y: 120, h: 160, fill: '#e3f2fd', label: 'CLUSTER · OCP (mgmt + deployments)' },
-    { id: 'infra', y: 280, h: 360, fill: '#eceff1', label: 'INFRA · host · adapter · vHosts · VyOS (RTR) on GW vHost' },
+    { id: 'infra', y: 280, h: 360, fill: '#eceff1', label: props.freeForm ? 'INFRA · free-form (relations optional)' : 'INFRA · host · adapter · vHosts · VyOS (RTR) on GW vHost' },
   ]
 })
 
@@ -142,8 +149,9 @@ const allNodes = computed(() => {
   const yACM = L === 'app' || L === 'cluster' ? 120 : 70
 
   if (showInfraStuff) {
+    const canvas = m.spec.canvas || {}
     const infra = m.spec.infraHost
-    if (infra?.id) {
+    if (infra?.id && !canvas.omitHost) {
       const ip = pos(infra.id, { x: 120, y: yHost })
       out.push({
         id: infra.id, kind: 'infraHost',
@@ -153,19 +161,24 @@ const allNodes = computed(() => {
       })
     }
 
-    const ap = pos('adapter', { x: 360, y: yAdapter })
-    out.push({
-      id: 'adapter', kind: 'adapter',
-      label: 'ADAPTER',
-      sub: `${provider} · IaaS`,
-      x: ap.x, y: ap.y, w: 150, h: 50, rx: 8, cls: 'fill-adapter',
-    })
+    if (!canvas.omitHost) {
+      const ap = pos('adapter', { x: 360, y: yAdapter })
+      out.push({
+        id: 'adapter', kind: 'adapter',
+        label: 'ADAPTER',
+        sub: `${provider} · IaaS`,
+        x: ap.x, y: ap.y, w: 150, h: 50, rx: 8, cls: 'fill-adapter',
+      })
+    }
 
     const vhosts = enumerateVHosts(m)
     const spacing = Math.min(108, Math.floor((vbW - 80) / Math.max(vhosts.length, 1)))
     const startX = Math.max(70, (vbW - (vhosts.length - 1) * spacing) / 2)
     vhosts.forEach((vh, i) => {
-      const fallback = { x: startX + i * spacing, y: yVHost }
+      const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === vh.id)
+      const fallback = orphan?.x
+        ? { x: orphan.x, y: orphan.y }
+        : { x: startX + i * spacing, y: yVHost }
       const p = pos(vh.id, fallback)
       out.push({
         id: vh.id,
@@ -179,25 +192,31 @@ const allNodes = computed(() => {
       })
     })
 
-    // VyOS = network function (RTR) / OS payload sitting on the GW vHost
-    const gw = m.spec.gateway
-    const gwVHost = out.find((n) => n.id === 'vhost-gw')
-    if (gw?.id && gwVHost) {
-      const gp = pos(gw.id, { x: gwVHost.x, y: yVyOS })
-      // Keep stacked on the vHost X unless user dragged VyOS elsewhere
-      const x = Math.abs(gp.x - gwVHost.x) < 5 ? gwVHost.x : gp.x
+    // Appliances / NFs sitting on vHosts (VyOS + free-form HAP/other)
+    enumerateAppliances(m).forEach((apn, i) => {
+      const under = out.find((n) => n.id === apn.runsOn)
+      const fallback = under
+        ? { x: under.x, y: under.y - 70 }
+        : { x: 200 + i * 120, y: yVyOS }
+      const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === apn.id)
+      const p = orphan?.x ? { x: orphan.x, y: orphan.y } : pos(apn.id, fallback)
+      const x = under && Math.abs(p.x - under.x) < 8 ? under.x : p.x
       out.push({
-        id: gw.id, kind: 'gateway',
-        label: gw.label || 'VYOS-GW',
-        sub: `RTR · ${gw.lanCIDR || 'LAN'}`,
-        x, y: gp.y, w: 120, h: 48, rx: 10, cls: 'fill-gateway',
+        id: apn.id,
+        kind: apn.kind === 'gateway' ? 'gateway' : 'appliance',
+        label: apn.label,
+        sub: apn.applianceType || 'appliance',
+        runsOn: apn.runsOn,
+        x, y: p.y, w: 120, h: 48, rx: 10,
+        cls: apn.applianceType === 'haproxy' ? 'fill-hap' : (apn.kind === 'gateway' ? 'fill-gateway' : 'fill-appliance'),
       })
-    }
+    })
   }
 
   if (showClusterStuff) {
+    const canvas = m.spec.canvas || {}
     const hub = m.spec.hub
-    if (hub?.id) {
+    if (hub?.id && !canvas.omitHub) {
       const hp = pos(hub.id, { x: 260, y: yOCP })
       out.push({
         id: hub.id, kind: 'hub',
@@ -219,8 +238,9 @@ const allNodes = computed(() => {
   }
 
   if (showAppStuff) {
+    const canvas = m.spec.canvas || {}
     const acm = m.spec.acm
-    if (acm?.id) {
+    if (acm?.id && !canvas.omitACM) {
       const acp = pos(acm.id, { x: 260, y: yACM })
       out.push({
         id: acm.id, kind: 'acm',
@@ -237,10 +257,11 @@ const allNodes = computed(() => {
 const nodes = computed(() => allNodes.value.filter((n) => inView(n.kind)))
 
 const edges = computed(() => {
+  if (!showRelations.value) return []
+
   const byId = Object.fromEntries(nodes.value.map((n) => [n.id, n]))
   const infra = byId[props.mockup?.spec?.infraHost?.id]
   const adapter = byId.adapter
-  const gw = byId[props.mockup?.spec?.gateway?.id]
   const gwVHost = byId['vhost-gw']
   const hub = byId[props.mockup?.spec?.hub?.id]
   const acm = byId[props.mockup?.spec?.acm?.id]
@@ -255,7 +276,6 @@ const edges = computed(() => {
         stroke: '#546e7a', width: 2, dash: '5 3', marker: 'url(#arrow-host)',
       })
     }
-    // Adapter fans out to every guest vHost
     nodes.value.filter((n) => n.kind === 'vhost').forEach((vh) => {
       if (!adapter) return
       out.push({
@@ -264,18 +284,20 @@ const edges = computed(() => {
         stroke: '#546e7a', width: 1.35, dash: '5 3', marker: 'url(#arrow-host)',
       })
     })
-    // VyOS (RTR) sits on the GW vHost
-    if (gw && gwVHost) {
-      out.push({
-        id: 'vyos-on-vhost',
-        d: `M ${gw.x} ${gw.y + 24} L ${gwVHost.x} ${gwVHost.y - 26}`,
-        stroke: '#e65100', width: 2.25, dash: null, marker: 'url(#arrow)',
-      })
-    }
+    nodes.value.filter((n) => n.kind === 'gateway' || n.kind === 'appliance').forEach((apn) => {
+      const under = byId[apn.runsOn] || (apn.kind === 'gateway' ? gwVHost : null)
+      if (apn && under) {
+        out.push({
+          id: `payload-${apn.id}`,
+          d: `M ${apn.x} ${apn.y + 24} L ${under.x} ${under.y - 26}`,
+          stroke: '#c62828', width: 2.25, dash: null, marker: 'url(#arrow)',
+        })
+      }
+    })
   }
 
   if (L === 'all' || L === 'cluster' || L === 'app') {
-    if (hub && acm && (L === 'all' || L === 'cluster' || L === 'app')) {
+    if (hub && acm) {
       out.push({
         id: 'hub-acm',
         d: curve(hub.x, hub.y - 26, acm.x, acm.y + 26),
@@ -353,6 +375,8 @@ function onClick(n) {
 .fill-adapter { fill: #546e7a; }
 .fill-vhost { fill: #78909c; }
 .fill-gateway { fill: #c62828; }
+.fill-appliance { fill: #6d4c41; }
+.fill-hap { fill: #5d4037; }
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }

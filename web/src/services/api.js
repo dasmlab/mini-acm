@@ -57,6 +57,11 @@ export async function deriveMockup(id) {
   return data
 }
 
+export async function validateMockup(id, mockup) {
+  const { data } = await api.post(`/mockups/${id}/validate`, mockup || undefined)
+  return data
+}
+
 export async function deleteMockup(id) {
   await api.delete(`/mockups/${id}`)
 }

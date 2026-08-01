@@ -60,6 +60,7 @@ func (s *Server) routes() chi.Router {
 		r.Post("/mockups/{id}/clusters", s.addCluster)
 		r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
 		r.Post("/mockups/{id}/derive", s.derive)
+		r.Post("/mockups/{id}/validate", s.validateMockup)
 		r.Delete("/mockups/{id}", s.deleteMockup)
 	})
 
@@ -216,6 +217,28 @@ func (s *Server) derive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"paths": paths})
+}
+
+func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var m *mockup.MockUp
+	if r.Body != nil && r.ContentLength != 0 {
+		var body mockup.MockUp
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		body.Metadata.ID = id
+		m = &body
+	} else {
+		got, err := s.store.Get(id)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		m = got
+	}
+	writeJSON(w, http.StatusOK, mockup.ValidateTopology(m))
 }
 
 func (s *Server) deleteMockup(w http.ResponseWriter, r *http.Request) {

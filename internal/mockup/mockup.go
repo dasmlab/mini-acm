@@ -46,6 +46,10 @@ type Spec struct {
 	BaseDomain string      `json:"baseDomain" yaml:"baseDomain"`
 	Provider   string      `json:"provider" yaml:"provider"`
 	Network    NetworkSpec `json:"network" yaml:"network"`
+	// CanvasMode: guided (default rack, constrained relations) | freeform (teaching / creative).
+	CanvasMode string `json:"canvasMode,omitempty" yaml:"canvasMode,omitempty"`
+	// Canvas holds free-form teaching state (omits, orphan drops). Derive ignores orphans.
+	Canvas *CanvasSpec `json:"canvas,omitempty" yaml:"canvas,omitempty"`
 	// InfraHost = MACHINE HOST: RHEL (BM or nested) where libvirtd/podman run.
 	InfraHost InfraHostNode `json:"infraHost" yaml:"infraHost"`
 	// Gateway = VyOS (or similar) VM: WAN on host bridge, LAN = lab libvirt net.
@@ -55,6 +59,33 @@ type Spec struct {
 	ACM      ACMNode       `json:"acm" yaml:"acm"`
 	Clusters []ClusterNode `json:"clusters" yaml:"clusters"`
 	Gaps     GapParams     `json:"gaps" yaml:"gaps"`
+}
+
+// CanvasSpec is free-form / creative topology state for teaching demos.
+// TODO(later): promote free-form → guided constrained MockUp is intentionally unsupported.
+type CanvasSpec struct {
+	// ShowRelations: when false (default in freeform), canvas draws no constrained edges.
+	ShowRelations bool `json:"showRelations,omitempty" yaml:"showRelations,omitempty"`
+	// Omit* hides rack objects from free-form view + validate (objects remain in YAML for undo).
+	OmitHost    bool `json:"omitHost,omitempty" yaml:"omitHost,omitempty"`
+	OmitGateway bool `json:"omitGateway,omitempty" yaml:"omitGateway,omitempty"`
+	OmitHub     bool `json:"omitHub,omitempty" yaml:"omitHub,omitempty"`
+	OmitACM     bool `json:"omitACM,omitempty" yaml:"omitACM,omitempty"`
+	// Orphans: free-form drops (vHosts / appliances) not owned by guided derive.
+	Orphans []CanvasNode `json:"orphans,omitempty" yaml:"orphans,omitempty"`
+}
+
+// CanvasNode is a free-form teaching object (vHost or appliance payload).
+type CanvasNode struct {
+	ID            string  `json:"id" yaml:"id"`
+	Kind          string  `json:"kind" yaml:"kind"` // vhost | appliance
+	Label         string  `json:"label" yaml:"label"`
+	ApplianceType string  `json:"applianceType,omitempty" yaml:"applianceType,omitempty"` // vyos | haproxy | other
+	// RunsOn: appliance → vHost id it sits on (middleware / payload on the guest).
+	RunsOn string `json:"runsOn,omitempty" yaml:"runsOn,omitempty"`
+	Notes  string `json:"notes,omitempty" yaml:"notes,omitempty"`
+	X      float64 `json:"x,omitempty" yaml:"x,omitempty"`
+	Y      float64 `json:"y,omitempty" yaml:"y,omitempty"`
 }
 
 // InfraHostNode is the MACHINE HOST (libvirtd). Not an OCP node.
@@ -470,6 +501,9 @@ func (s *Store) Dir(id string) string {
 
 // normalize fills MVP-gap defaults and migrates legacy shared cluster gaps.
 func normalize(m *MockUp) {
+	if m.Spec.CanvasMode == "" {
+		m.Spec.CanvasMode = "guided"
+	}
 	if m.Spec.Gaps.PullSecretFile == "" {
 		m.Spec.Gaps.PullSecretFile = "$PULL_SECRET_FILE"
 	}
@@ -665,8 +699,9 @@ func (m *MockUp) AddCluster() ClusterNode {
 }
 
 // RemoveCluster deletes a DEPLOYMENT-CLUSTER by id (underlying VM lifecycle object).
+// Guided mode keeps ≥1 cluster; free-form may remove all (teaching incomplete racks).
 func (m *MockUp) RemoveCluster(clusterID string) error {
-	if len(m.Spec.Clusters) <= 1 {
+	if !m.IsFreeForm() && len(m.Spec.Clusters) <= 1 {
 		return fmt.Errorf("keep at least one deployment cluster")
 	}
 	idx := -1
@@ -684,6 +719,34 @@ func (m *MockUp) RemoveCluster(clusterID string) error {
 		delete(m.Layout.Nodes, clusterID)
 	}
 	return nil
+}
+
+// IsFreeForm reports creative / teaching canvas mode.
+func (m *MockUp) IsFreeForm() bool {
+	return strings.EqualFold(m.Spec.CanvasMode, "freeform")
+}
+
+func (m *MockUp) canvas() *CanvasSpec {
+	if m.Spec.Canvas == nil {
+		m.Spec.Canvas = &CanvasSpec{}
+	}
+	return m.Spec.Canvas
+}
+
+func (m *MockUp) EffectiveHost() bool {
+	return m.Spec.InfraHost.ID != "" && (m.Spec.Canvas == nil || !m.Spec.Canvas.OmitHost)
+}
+
+func (m *MockUp) EffectiveGateway() bool {
+	return m.Spec.Gateway.ID != "" && (m.Spec.Canvas == nil || !m.Spec.Canvas.OmitGateway)
+}
+
+func (m *MockUp) EffectiveHub() bool {
+	return m.Spec.Hub.ID != "" && (m.Spec.Canvas == nil || !m.Spec.Canvas.OmitHub)
+}
+
+func (m *MockUp) EffectiveACM() bool {
+	return m.Spec.ACM.ID != "" && m.Spec.ACM.Enabled && (m.Spec.Canvas == nil || !m.Spec.Canvas.OmitACM)
 }
 
 func nextClusterIndex(clusters []ClusterNode) int {

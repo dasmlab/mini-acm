@@ -9,32 +9,120 @@
         </div>
       </div>
 
+      <q-btn-toggle
+        v-if="mockup"
+        v-model="canvasMode"
+        toggle-color="primary"
+        unelevated
+        dense
+        class="q-mr-sm"
+        :options="[
+          { label: 'Guided', value: 'guided' },
+          { label: 'Free-form', value: 'freeform' },
+        ]"
+        @update:model-value="onCanvasMode"
+      />
+      <q-btn
+        v-if="isFreeForm"
+        outline
+        color="secondary"
+        icon="rule"
+        label="Validate"
+        class="q-mr-sm"
+        :loading="validating"
+        @click="onValidate"
+      />
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
-        <q-list style="min-width: 320px">
-          <q-item-label header>Infrastructure</q-item-label>
+        <q-list style="min-width: 340px">
+          <q-item-label header>{{ isFreeForm ? 'Free-form palette' : 'Guided add' }}</q-item-label>
           <q-item clickable v-close-popup @click="onAddCluster">
             <q-item-section avatar><q-icon name="developer_board" color="primary" /></q-item-section>
             <q-item-section>
-              <q-item-label>Deployment cluster (v)Host</q-item-label>
-              <q-item-label caption>Guest VMs that back a managed OCP</q-item-label>
+              <q-item-label>Deployment cluster</q-item-label>
+              <q-item-label caption>Managed OCP (+ derived vHosts)</q-item-label>
             </q-item-section>
           </q-item>
-          <q-item disable>
-            <q-item-section avatar><q-icon name="router" color="grey" /></q-item-section>
-            <q-item-section>
-              <q-item-label>HAProxy / VIP front</q-item-label>
-              <q-item-label caption>Later — cluster ingress path, not VyOS</q-item-label>
-            </q-item-section>
-          </q-item>
-          <q-separator />
-          <q-item dense>
-            <q-item-section>
-              <q-item-label caption>
-                Host, adapter, VyOS, and mgmt are MockUp singletons — select on canvas to edit.
-                VyOS matters for vSwitch / egress; not for cluster-mgmt talk.
-              </q-item-label>
-            </q-item-section>
-          </q-item>
+          <template v-if="isFreeForm">
+            <q-item clickable v-close-popup @click="onAddOrphanVHost">
+              <q-item-section avatar><q-icon name="dns" color="blue-grey" /></q-item-section>
+              <q-item-section>
+                <q-item-label>vHost (orphan)</q-item-label>
+                <q-item-label caption>Teaching drop — needs a payload on Validate</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddAppliance('haproxy')">
+              <q-item-section avatar><q-icon name="router" color="brown" /></q-item-section>
+              <q-item-section>
+                <q-item-label>HAProxy appliance</q-item-label>
+                <q-item-label caption>Link to a vHost (runsOn) — stub payload</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddAppliance('other')">
+              <q-item-section avatar><q-icon name="extension" color="brown" /></q-item-section>
+              <q-item-section>
+                <q-item-label>Other appliance</q-item-label>
+                <q-item-label caption>Generic NF / middleware on a vHost</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item-label header>Show / hide rack pieces</q-item-label>
+            <q-item clickable v-close-popup @click="toggleOmit('omitHub')">
+              <q-item-section>
+                <q-item-label>{{ mockup.spec.canvas?.omitHub ? 'Show' : 'Hide' }} mgmt cluster</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="toggleOmit('omitACM')">
+              <q-item-section>
+                <q-item-label>{{ mockup.spec.canvas?.omitACM ? 'Show' : 'Hide' }} ACM</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="toggleOmit('omitGateway')">
+              <q-item-section>
+                <q-item-label>{{ mockup.spec.canvas?.omitGateway ? 'Show' : 'Hide' }} VyOS gateway</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="toggleOmit('omitHost')">
+              <q-item-section>
+                <q-item-label>{{ mockup.spec.canvas?.omitHost ? 'Show' : 'Hide' }} MACHINE-HOST</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="stripForTeaching">
+              <q-item-section>
+                <q-item-label>Strip to blank teaching canvas</q-item-label>
+                <q-item-label caption>Hide rack + clear deployments / orphans</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item clickable v-close-popup @click="toggleShowRelations">
+              <q-item-section>
+                <q-item-label>{{ mockup.spec.canvas?.showRelations ? 'Hide' : 'Show' }} relation edges</q-item-label>
+                <q-item-label caption>Free-form defaults to no constrained lines</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item disable>
+              <q-item-section>
+                <q-item-label>Promote → guided MockUp</q-item-label>
+                <q-item-label caption>TODO later — not supported; rebuild in Guided</q-item-label>
+              </q-item-section>
+            </q-item>
+          </template>
+          <template v-else>
+            <q-item disable>
+              <q-item-section avatar><q-icon name="router" color="grey" /></q-item-section>
+              <q-item-section>
+                <q-item-label>HAProxy / VIP front</q-item-label>
+                <q-item-label caption>Use Free-form to drop a stub, or later guided add</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item dense>
+              <q-item-section>
+                <q-item-label caption>
+                  Guided: host / adapter / VyOS / mgmt are singletons — select to edit. Switch to Free-form to teach with orphan drops.
+                </q-item-label>
+              </q-item-section>
+            </q-item>
+          </template>
         </q-list>
       </q-btn-dropdown>
       <q-btn color="primary" icon="save" label="Save" :loading="saving" @click="persist" />
@@ -72,6 +160,7 @@
             :mockup="mockup"
             :selected-id="selected?.id"
             :layer="layer"
+            :free-form="isFreeForm"
             @select="onSelect"
             @move="onMove"
           />
@@ -121,9 +210,19 @@
                   icon="edit" @click="openEditor"
                 />
                 <q-btn
-                  v-if="selected.kind === 'cluster' && mockup.spec.clusters.length > 1"
+                  v-if="selected.kind === 'cluster' && (isFreeForm || mockup.spec.clusters.length > 1)"
                   flat color="negative" label="Remove" icon="delete"
                   @click="onDeleteCluster(selectedNodeData)"
+                />
+                <q-btn
+                  v-if="selected.kind === 'vhost' && selectedMeta.orphan"
+                  flat color="negative" label="Remove vHost" icon="delete"
+                  @click="onRemoveOrphan(selected.id)"
+                />
+                <q-btn
+                  v-if="selected.kind === 'appliance'"
+                  flat color="negative" label="Remove" icon="delete"
+                  @click="onRemoveOrphan(selected.id)"
                 />
               </div>
             </template>
@@ -172,6 +271,29 @@
       :node="editNode"
       @save="onSaveNode"
     />
+
+    <q-dialog v-model="validateOpen">
+      <q-card style="min-width: 480px; max-width: 640px">
+        <q-card-section>
+          <div class="text-h6">{{ validateResult?.ok ? 'Validate OK' : 'Validate found issues' }}</div>
+          <div class="text-caption text-grey-7">{{ validateResult?.summary }}</div>
+        </q-card-section>
+        <q-card-section class="q-pt-none" style="max-height: 360px; overflow: auto">
+          <div v-for="(iss, i) in (validateResult?.issues || [])" :key="i" class="q-mb-sm">
+            <q-badge :color="iss.severity === 'error' ? 'negative' : 'warning'" :label="iss.severity" class="q-mr-sm" />
+            <span class="text-body2">{{ iss.message }}</span>
+          </div>
+          <div v-if="!(validateResult?.issues || []).length" class="text-body2 text-positive">
+            No issues — minimum ACM lab picture looks complete.
+          </div>
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat disable label="Promote to Guided" />
+          <q-tooltip>TODO later — free-form → constrained promote is not supported; rebuild in Guided.</q-tooltip>
+          <q-btn flat label="Close" color="primary" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -181,9 +303,9 @@ import { Dialog, Notify } from 'quasar'
 import TopologyCanvas from 'src/components/TopologyCanvas.vue'
 import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, imageSetName,
 } from 'src/services/api'
-import { enumerateVHosts } from 'src/lib/vhosts'
+import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -191,12 +313,18 @@ const mockup = ref(null)
 const loading = ref(true)
 const saving = ref(false)
 const deriving = ref(false)
+const validating = ref(false)
+const validateOpen = ref(false)
+const validateResult = ref(null)
 const selected = ref(null)
 const editOpen = ref(false)
 const editKind = ref('hub')
 const editNode = ref(null)
 const layer = ref('all')
+const canvasMode = ref('guided')
 let layoutTimer = null
+
+const isFreeForm = computed(() => canvasMode.value === 'freeform')
 
 const layerOptions = [
   { id: 'all', title: 'Full rack', sub: 'All bands' },
@@ -220,7 +348,7 @@ const layerHint = computed(() => {
 
 /** Object-list filters per view. Infra lists vHosts (not OCP cluster boxes). */
 const LAYER_ROWS = {
-  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway']),
+  infra: new Set(['infraHost', 'adapter', 'vhost', 'gateway', 'appliance']),
   cluster: new Set(['hub', 'cluster', 'acm']),
   app: new Set(['acm']),
 }
@@ -238,22 +366,25 @@ const objectRows = computed(() => {
   const m = mockup.value
   if (!m?.spec) return []
   const L = layer.value
+  const canvas = m.spec.canvas || {}
   const rows = []
 
   if (L === 'infra' || L === 'all') {
     const ih = m.spec.infraHost
-    if (ih?.id) {
+    if (ih?.id && !canvas.omitHost) {
       rows.push({
         id: ih.id, kind: 'infraHost',
         title: ih.label || 'MACHINE-HOST',
         sub: 'HW host · libvirt / podman',
       })
     }
-    rows.push({
-      id: 'adapter', kind: 'adapter',
-      title: 'ADAPTER',
-      sub: `${m.spec.provider || 'libvirt'} IaaS`,
-    })
+    if (!canvas.omitHost) {
+      rows.push({
+        id: 'adapter', kind: 'adapter',
+        title: 'ADAPTER',
+        sub: `${m.spec.provider || 'libvirt'} IaaS`,
+      })
+    }
     for (const vh of enumerateVHosts(m)) {
       rows.push({
         id: vh.id, kind: 'vhost',
@@ -264,17 +395,25 @@ const objectRows = computed(() => {
       })
     }
     const gw = m.spec.gateway
-    if (gw?.id) {
+    if (gw?.id && !canvas.omitGateway) {
       rows.push({
         id: gw.id, kind: 'gateway',
         title: gw.label || 'VYOS-GW',
         sub: 'RTR / NF on vHost-GW',
       })
     }
+    for (const o of canvas.orphans || []) {
+      if (o.kind !== 'appliance') continue
+      rows.push({
+        id: o.id, kind: 'appliance',
+        title: o.label || o.id,
+        sub: `${o.applianceType || 'appliance'} · ${o.runsOn || 'unlinked'}`,
+      })
+    }
   }
 
   if (L === 'cluster' || L === 'all') {
-    if (m.spec.hub?.id) {
+    if (m.spec.hub?.id && !canvas.omitHub) {
       rows.push({
         id: m.spec.hub.id, kind: 'hub',
         title: m.spec.hub.label || 'MGMT-CLUSTER',
@@ -291,7 +430,7 @@ const objectRows = computed(() => {
   }
 
   if (L === 'app' || L === 'cluster' || L === 'all') {
-    if (m.spec.acm?.id) {
+    if (m.spec.acm?.id && !canvas.omitACM) {
       rows.push({
         id: m.spec.acm.id, kind: 'acm',
         title: m.spec.acm.label || 'ACM',
@@ -319,11 +458,18 @@ const selectedNodeData = computed(() => {
   if (k === 'vhost') {
     const vh = enumerateVHosts(mockup.value).find((x) => x.id === selected.value.id)
     if (!vh) return null
+    if (vh.orphan) {
+      return { ...vh, orphan: true, parent: null }
+    }
     let parent = null
     if (vh.parentKind === 'gateway') parent = mockup.value.spec.gateway
     else if (vh.parentKind === 'hub') parent = mockup.value.spec.hub
     else parent = mockup.value.spec.clusters.find((c) => c.id === vh.parentId)
     return { ...vh, parent }
+  }
+  if (k === 'appliance') {
+    const o = (mockup.value.spec.canvas?.orphans || []).find((x) => x.id === selected.value.id)
+    return o || null
   }
   if (k === 'infraHost') return mockup.value.spec.infraHost
   if (k === 'gateway') return mockup.value.spec.gateway
@@ -355,20 +501,35 @@ const selectedMeta = computed(() => {
   if (n.kind === 'vhost') {
     const p = d.parent || {}
     return {
-      classLabel: 'Guest vHost',
+      classLabel: d.orphan ? 'Free-form vHost' : 'Guest vHost',
       title: d.label,
-      roleLine: d.role === 'gw'
-        ? 'Role: VM that runs the VyOS RTR / network function'
-        : d.role === 'hub'
-          ? 'Role: VM that runs the mgmt OCP OS (SNO)'
-          : 'Role: VM that backs a deployment OCP node',
+      roleLine: d.orphan
+        ? 'Role: teaching drop — Validate expects a cluster/appliance on top'
+        : d.role === 'gw'
+          ? 'Role: VM that runs the VyOS RTR / network function'
+          : d.role === 'hub'
+            ? 'Role: VM that runs the mgmt OCP OS (SNO)'
+            : 'Role: VM that backs a deployment OCP node',
       acmLine: 'Infrastructure — OCP/ACM objects live in Cluster / App views',
-      editable: true,
-      editParent: true,
+      editable: !d.orphan,
+      orphan: !!d.orphan,
       facts: [
-        { k: 'Parent', v: p.label || p.name || d.parentId },
+        { k: 'Parent', v: d.orphan ? '(none — orphan)' : (p.label || p.name || d.parentId) },
         { k: 'Size', v: p.cpu ? `${p.cpu}c / ${Math.round((p.memoryMiB || 0) / 1024)}G` : '—' },
-        { k: 'Payload', v: d.role === 'gw' ? 'VyOS (RTR)' : 'OCP node OS' },
+        { k: 'Payload', v: d.role === 'gw' ? 'VyOS (RTR)' : (d.orphan ? 'MISSING until linked' : 'OCP node OS') },
+      ],
+    }
+  }
+  if (n.kind === 'appliance') {
+    return {
+      classLabel: 'Appliance / NF',
+      title: d.label,
+      roleLine: `Role: ${d.applianceType || 'appliance'} payload on a vHost`,
+      acmLine: d.runsOn ? `Runs on ${d.runsOn}` : 'Not linked to a vHost — Validate will fail',
+      editable: false,
+      facts: [
+        { k: 'Type', v: d.applianceType || 'other' },
+        { k: 'Runs on', v: d.runsOn || '—' },
       ],
     }
   }
@@ -451,10 +612,125 @@ async function load() {
   loading.value = true
   try {
     mockup.value = await getMockup(props.id)
+    canvasMode.value = mockup.value.spec.canvasMode || 'guided'
   } catch (e) {
     Notify.create({ type: 'negative', message: e.message })
   } finally {
     loading.value = false
+  }
+}
+
+async function onCanvasMode(mode) {
+  if (!mockup.value) return
+  mockup.value.spec.canvasMode = mode
+  const c = ensureCanvas(mockup.value)
+  if (mode === 'freeform' && c.showRelations === undefined) {
+    c.showRelations = false
+  }
+  await persistQuiet()
+  Notify.create({
+    type: 'info',
+    message: mode === 'freeform'
+      ? 'Free-form: no constrained edges — drop objects and Validate. Promote→Guided is not supported yet.'
+      : 'Guided rack mode (constrained picture).',
+  })
+}
+
+async function persistQuiet() {
+  try {
+    mockup.value = await saveMockup(props.id, mockup.value)
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  }
+}
+
+function onAddOrphanVHost() {
+  const c = ensureCanvas(mockup.value)
+  const id = newOrphanId('ff-vhost')
+  const node = { id, kind: 'vhost', label: `vHost-${c.orphans.filter((o) => o.kind === 'vhost').length + 1}`, x: 400, y: 320 }
+  c.orphans.push(node)
+  if (!mockup.value.layout.nodes) mockup.value.layout.nodes = {}
+  mockup.value.layout.nodes[id] = { x: node.x, y: node.y }
+  selected.value = { id, kind: 'vhost' }
+  persist()
+}
+
+function onAddAppliance(type) {
+  const c = ensureCanvas(mockup.value)
+  const vhosts = enumerateVHosts(mockup.value)
+  const orphanVhs = vhosts.filter((v) => v.orphan)
+  const runsOn = orphanVhs[0]?.id || vhosts[0]?.id || ''
+  const id = newOrphanId('ff-app')
+  const label = type === 'haproxy' ? 'HAProxy' : 'Appliance'
+  const node = {
+    id, kind: 'appliance', label, applianceType: type, runsOn,
+    x: 400, y: 240,
+  }
+  c.orphans.push(node)
+  if (!mockup.value.layout.nodes) mockup.value.layout.nodes = {}
+  mockup.value.layout.nodes[id] = { x: node.x, y: node.y }
+  selected.value = { id, kind: 'appliance' }
+  persist()
+  if (!runsOn) {
+    Notify.create({ type: 'warning', message: 'No vHost to sit on — Validate will flag this appliance.' })
+  }
+}
+
+function toggleOmit(key) {
+  const c = ensureCanvas(mockup.value)
+  c[key] = !c[key]
+  persist()
+}
+
+function toggleShowRelations() {
+  const c = ensureCanvas(mockup.value)
+  c.showRelations = !c.showRelations
+  persist()
+}
+
+function stripForTeaching() {
+  Dialog.create({
+    title: 'Strip to blank teaching canvas?',
+    message: 'Hides host/gateway/mgmt/ACM, clears deployment clusters and free-form orphans. YAML keep-alives remain for undo via Show toggles (except cleared clusters/orphans).',
+    cancel: true,
+    persistent: true,
+  }).onOk(async () => {
+    const c = ensureCanvas(mockup.value)
+    c.omitHost = true
+    c.omitGateway = true
+    c.omitHub = true
+    c.omitACM = true
+    c.orphans = []
+    c.showRelations = false
+    mockup.value.spec.clusters = []
+    selected.value = null
+    await persist()
+  })
+}
+
+function onRemoveOrphan(id) {
+  const c = ensureCanvas(mockup.value)
+  c.orphans = c.orphans.filter((o) => o.id !== id)
+  if (mockup.value.layout?.nodes) delete mockup.value.layout.nodes[id]
+  if (selected.value?.id === id) selected.value = null
+  persist()
+}
+
+async function onValidate() {
+  validating.value = true
+  try {
+    await persistQuiet()
+    validateResult.value = await validateMockup(props.id, mockup.value)
+    validateOpen.value = true
+    if (validateResult.value.ok) {
+      Notify.create({ type: 'positive', message: validateResult.value.summary })
+    } else {
+      Notify.create({ type: 'warning', message: validateResult.value.summary })
+    }
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    validating.value = false
   }
 }
 
@@ -485,10 +761,16 @@ function openEditor() {
 function onMove({ id, x, y }) {
   if (!mockup.value.layout.nodes) mockup.value.layout.nodes = {}
   mockup.value.layout.nodes[id] = { x, y }
+  const orphan = mockup.value.spec.canvas?.orphans?.find((o) => o.id === id)
+  if (orphan) {
+    orphan.x = x
+    orphan.y = y
+  }
   clearTimeout(layoutTimer)
   layoutTimer = setTimeout(async () => {
     try {
       await patchLayout(props.id, mockup.value.layout)
+      if (orphan) await persistQuiet()
     } catch { /* ignore */ }
   }, 400)
 }
@@ -762,6 +1044,7 @@ onMounted(load)
 }
 .dot-infraHost { background: #37474f; }
 .dot-adapter { background: #546e7a; }
+.dot-appliance { background: #6d4c41; }
 .dot-vhost { background: #78909c; }
 .dot-gateway { background: #c62828; }
 .dot-hub { background: #1a237e; }
