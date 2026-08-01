@@ -1,52 +1,52 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: mini-acm-sa
-  namespace: mini-acm-system
+  name: mini-mock-sa
+  namespace: mini-mock-system
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: system:openshift:scc:anyuid
-  namespace: mini-acm-system
+  namespace: mini-mock-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:openshift:scc:anyuid
 subjects:
   - kind: ServiceAccount
-    name: mini-acm-sa
-    namespace: mini-acm-system
+    name: mini-mock-sa
+    namespace: mini-mock-system
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mini-acm
-  namespace: mini-acm-system
+  name: mini-mock
+  namespace: mini-mock-system
   labels:
-    app: mini-acm
-    app.kubernetes.io/name: mini-acm
+    app: mini-mock
+    app.kubernetes.io/name: mini-mock
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: mini-acm
+      app: mini-mock
   template:
     metadata:
       labels:
-        app: mini-acm
+        app: mini-mock
     spec:
-      serviceAccountName: mini-acm-sa
+      serviceAccountName: mini-mock-sa
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
       imagePullSecrets:
         - name: dasmlab-ghcr-pull
       containers:
-        - name: mini-acm
-          image: ghcr.io/dasmlab/mini-acm:__VERSION__
+        - name: mini-mock
+          image: ghcr.io/dasmlab/mini-mock:__VERSION__
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -66,8 +66,25 @@ spec:
               value: ":8080"
             - name: BUILD_VERSION
               value: "__VERSION__"
+            - name: APP_PUBLIC_URL
+              value: "https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org"
+            - name: KEYCLOAK_URL
+              value: "https://keycloak.apps.2026-prod-1.ocp.dasmlab.org"
+            - name: KEYCLOAK_REALM
+              value: dasmlab
+            - name: OIDC_CLIENT_ID
+              value: mini-mock
+            # Create secret mini-mock-oidc with key client-secret to enable SSO
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mini-mock-oidc
+                  key: client-secret
+                  optional: true
+            - name: OIDC_REDIRECT_URI
+              value: "https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback"
           volumeMounts:
-            - name: mini-acm-data
+            - name: mini-mock-data
               mountPath: /data
           ports:
             - name: http
@@ -93,16 +110,16 @@ spec:
               memory: "512Mi"
               cpu: "500m"
       volumes:
-        - name: mini-acm-data
+        - name: mini-mock-data
           persistentVolumeClaim:
-            claimName: mini-acm-data
+            claimName: mini-mock-data
 
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mini-acm-data
-  namespace: mini-acm-system
+  name: mini-mock-data
+  namespace: mini-mock-system
 spec:
   accessModes:
     - ReadWriteOnce
@@ -115,11 +132,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: mini-acm
-  namespace: mini-acm-system
+  name: mini-mock
+  namespace: mini-mock-system
 spec:
   selector:
-    app: mini-acm
+    app: mini-mock
   type: ClusterIP
   ports:
     - name: http
@@ -131,15 +148,15 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: mini-acm
-  namespace: mini-acm-system
+  name: mini-mock
+  namespace: mini-mock-system
   labels:
-    app: mini-acm
+    app: mini-mock
 spec:
-  host: mini-acm.apps.2026-prod-1.ocp.dasmlab.org
+  host: mini-mock.apps.2026-prod-1.ocp.dasmlab.org
   to:
     kind: Service
-    name: mini-acm
+    name: mini-mock
     weight: 100
   port:
     targetPort: http

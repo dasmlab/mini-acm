@@ -1,4 +1,4 @@
-// Package config loads hub and managed-cluster YAML for mini-acm.
+// Package config loads hub and managed-cluster YAML for mini-mock.
 // Secrets (pull secret, SSH key, kubeconfig paths) come from env / files —
 // never embed credentials in committed YAML.
 package config
@@ -142,7 +142,7 @@ func LoadCluster(path string) (*ClusterConfig, error) {
 
 func (c *HubConfig) ApplyDefaults() {
 	if c.APIVersion == "" {
-		c.APIVersion = "mini-acm.dasmlab.org/v1alpha1"
+		c.APIVersion = "mini-mock.dasmlab.org/v1alpha1"
 	}
 	if c.Kind == "" {
 		c.Kind = "Hub"
@@ -180,7 +180,7 @@ func (c *HubConfig) ApplyDefaults() {
 
 func (c *ClusterConfig) ApplyDefaults() {
 	if c.APIVersion == "" {
-		c.APIVersion = "mini-acm.dasmlab.org/v1alpha1"
+		c.APIVersion = "mini-mock.dasmlab.org/v1alpha1"
 	}
 	if c.Kind == "" {
 		c.Kind = "ManagedCluster"

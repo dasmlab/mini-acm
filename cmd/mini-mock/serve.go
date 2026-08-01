@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -9,9 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dasmlab/mini-acm/internal/api"
-	"github.com/dasmlab/mini-acm/internal/inventory"
-	"github.com/dasmlab/mini-acm/internal/mockup"
+	"github.com/dasmlab/mini-mock/internal/api"
+	"github.com/dasmlab/mini-mock/internal/auth"
+	"github.com/dasmlab/mini-mock/internal/inventory"
+	"github.com/dasmlab/mini-mock/internal/mockup"
 )
 
 //go:embed all:static
@@ -27,7 +29,7 @@ func newServeCmd() *cobra.Command {
 		Short: "Start the web UI + MockUp API",
 		Long: `serve embeds the Vue UI and exposes /api/v1 for MockUp topology + wizard flows.
 
-  mini-acm serve --listen :8080 --data-dir ./data
+  mini-mock serve --listen :8080 --data-dir ./data
 
 LAB / TEST / DEV ONLY.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -55,6 +57,17 @@ LAB / TEST / DEV ONLY.`,
 				return err
 			}
 
+			authCfg := auth.ConfigFromEnv()
+			authSvc, err := auth.New(context.Background(), authCfg)
+			if err != nil {
+				return fmt.Errorf("oidc: %w", err)
+			}
+			if authSvc.Enabled() {
+				fmt.Fprintf(os.Stderr, "OIDC enabled (issuer=%s client=%s)\n", authCfg.Issuer, authCfg.ClientID)
+			} else {
+				fmt.Fprintln(os.Stderr, "OIDC disabled — open local/dev mode (set KEYCLOAK_URL + OIDC_CLIENT_SECRET to enable)")
+			}
+
 			var staticHandler http.Handler
 			sub, err := fs.Sub(staticEmbed, "static")
 			if err == nil {
@@ -63,8 +76,8 @@ LAB / TEST / DEV ONLY.`,
 				fmt.Fprintln(os.Stderr, "warning: no embedded UI (static/); API-only mode")
 			}
 
-			srv := api.New(store, inv, dataDir, version, staticHandler)
-			fmt.Fprintf(os.Stderr, "mini-acm UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
+			srv := api.New(store, inv, authSvc, dataDir, version, staticHandler)
+			fmt.Fprintf(os.Stderr, "mini-mock UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
 			return api.ListenAndServe(addr, srv.Handler())
 		},
 	}

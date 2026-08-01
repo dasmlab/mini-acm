@@ -1,5 +1,5 @@
 // Package mockup stores product canvases (MockUp). Genre + style select the offering
-// (e.g. cluster-management / mini-acm-multi-cluster); ACM lab rack is the first style.
+// (e.g. cluster-management / acm-multi-cluster); ACM lab rack is the first style.
 package mockup
 
 import (
@@ -44,7 +44,7 @@ type Metadata struct {
 }
 
 type Spec struct {
-	// Genre + Style select the product offering (catalog). Default: cluster-management / mini-acm-multi-cluster.
+	// Genre + Style select the product offering (catalog). Default: cluster-management / acm-multi-cluster.
 	Genre string `json:"genre,omitempty" yaml:"genre,omitempty"`
 	Style string `json:"style,omitempty" yaml:"style,omitempty"`
 
@@ -308,7 +308,7 @@ func defaultSingleSNOMockUp(id, name, domain, provider, notes, now string) *Mock
 	hubID := "hub"
 	gw := defaultGateway()
 	return &MockUp{
-		APIVersion: "mini-acm.dasmlab.org/v1alpha1",
+		APIVersion: "mini-mock.dasmlab.org/v1alpha1",
 		Kind:       "MockUp",
 		Metadata: Metadata{
 			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
@@ -377,14 +377,14 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 	c1 := newClusterNode(1, "4.18", "10.77.30.12", "10.77.30.13")
 	gw := defaultGateway()
 	return &MockUp{
-		APIVersion: "mini-acm.dasmlab.org/v1alpha1",
+		APIVersion: "mini-mock.dasmlab.org/v1alpha1",
 		Kind:       "MockUp",
 		Metadata: Metadata{
 			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
 		},
 		Spec: Spec{
 			Genre:      GenreClusterManagement,
-			Style:      StyleMiniACMMultiCluster,
+			Style:      StyleACMMultiCluster,
 			BaseDomain: domain,
 			Provider:   provider,
 			Network: NetworkSpec{
@@ -434,7 +434,7 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 }
 
 func defaultInfraHost(rackName string) InfraHostNode {
-	host := "rhel10-vhost-mini-acm"
+	host := "rhel10-vhost-mini-mock"
 	if rackName != "" {
 		host = "prov-" + rackName
 	}
@@ -597,8 +597,11 @@ func normalize(m *MockUp) {
 	if m.Spec.Genre == "" {
 		m.Spec.Genre = GenreClusterManagement
 	}
-	if m.Spec.Style == "" {
-		m.Spec.Style = StyleMiniACMMultiCluster
+	if m.Spec.Style == "" || m.Spec.Style == "mini-acm-multi-cluster" {
+		m.Spec.Style = StyleACMMultiCluster
+	}
+	if m.APIVersion == "" || m.APIVersion == "mini-acm.dasmlab.org/v1alpha1" {
+		m.APIVersion = "mini-mock.dasmlab.org/v1alpha1"
 	}
 	if m.Spec.CanvasMode == "" {
 		m.Spec.CanvasMode = "guided"

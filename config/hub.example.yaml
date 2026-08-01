@@ -1,6 +1,6 @@
 # Example ACM management hub (SNO via local Agent-based Installer).
 # Secrets: set PULL_SECRET_FILE / SSH_PUBLIC_KEY_FILE in .env — never here.
-apiVersion: mini-acm.dasmlab.org/v1alpha1
+apiVersion: mini-mock.dasmlab.org/v1alpha1
 kind: Hub
 metadata:
   name: hub

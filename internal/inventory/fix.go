@@ -140,7 +140,7 @@ set -e
 dnf install -y podman
 command -v podman
 podman --version
-# EE / runner agent image pull is deferred (MINI_ACM_AGENT_IMAGE later)
+# EE / runner agent image pull is deferred (MINI_MOCK_AGENT_IMAGE later)
 `, "install-podman")
 	default:
 		return nil, fmt.Errorf("unknown fix action %q", action)

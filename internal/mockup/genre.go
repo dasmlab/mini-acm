@@ -9,7 +9,7 @@ const (
 	GenreApplicationDevelopment  = "application-development"
 	GenreInfrastructure          = "infrastructure"
 
-	StyleMiniACMMultiCluster = "mini-acm-multi-cluster"
+	StyleACMMultiCluster = "acm-multi-cluster"
 	StyleSingleSNOOCP        = "single-sno-ocp"
 	StyleWindowsUI           = "windows-ui"
 	StyleWebFullStack        = "web-full-stack"
@@ -59,7 +59,7 @@ func Catalog() CatalogResponse {
 		{
 			ID: StyleSingleSNOOCP, Genre: GenreClusterManagement,
 			Label: "Single SNO OCP",
-			Description: "Bring up one SNO (OCP-MGMT) via the adapter (libvirt today). Same MACHINE-HOST → vHost path as the mgmt half of MINI ACM — stop before ACM / spokes.",
+			Description: "Bring up one SNO (OCP-MGMT) via the adapter (libvirt today). Same MACHINE-HOST → vHost path as the mgmt half of ACM Multi-Cluster — stop before ACM / spokes.",
 			Available: true,
 			ObjectTypes: []string{
 				"MachineHost", "Adapter", "VHost", "Gateway", "OCP-MGMT", "Appliance",
@@ -70,12 +70,12 @@ func Catalog() CatalogResponse {
 				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
 				{From: "VHost", Rel: "hostedBy", To: "Adapter", Cardinality: "1..*"},
 				{From: "Gateway", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "VyOS on vHost-GW"},
-				{From: "OCP-MGMT", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "SNO guest — same Hub object as MINI ACM"},
+				{From: "OCP-MGMT", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "SNO guest — same Hub object used by ACM Multi-Cluster"},
 			},
 		},
 		{
-			ID: StyleMiniACMMultiCluster, Genre: GenreClusterManagement,
-			Label: "MINI ACM Multi-Cluster",
+			ID: StyleACMMultiCluster, Genre: GenreClusterManagement,
+			Label: "ACM Multi-Cluster",
 			Description: "Composable: Single SNO (OCP-MGMT) + ACM payload + N× OCP-DEPLOY. Mgmt hosts ACM; managed deployments on the lab rack.",
 			Available: true,
 			ObjectTypes: []string{
@@ -149,8 +149,8 @@ func Catalog() CatalogResponse {
 	genres := []GenreDef{
 		{
 			ID: GenreClusterManagement, Label: "Cluster Management",
-			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or MINI ACM (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
-			Styles: []string{StyleSingleSNOOCP, StyleMiniACMMultiCluster},
+			Description: "OCP lab MockUps via adapter (libvirt…): Single SNO, or mini-mock (SNO + ACM + managed deployments). Building blocks: vHost, OCP-MGMT, OCP-DEPLOY, VyOS, HAP, ACM.",
+			Styles: []string{StyleSingleSNOOCP, StyleACMMultiCluster},
 		},
 		{
 			ID: GenreApplicationDevelopment, Label: "Application Development",
@@ -178,10 +178,10 @@ func LookupStyle(id string) *StyleDef {
 	return nil
 }
 
-// ResolveCreateStyle picks genre/style for Create, defaulting to MINI ACM.
+// ResolveCreateStyle picks genre/style for Create, defaulting to mini-mock.
 func ResolveCreateStyle(genre, style string) (g, st string, def *StyleDef, err error) {
 	if style == "" {
-		style = StyleMiniACMMultiCluster
+		style = StyleACMMultiCluster
 	}
 	def = LookupStyle(style)
 	if def == nil {

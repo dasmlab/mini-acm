@@ -29,28 +29,28 @@ RHEL (or compatible) with:
 ## Phase 1 — Hub SNO
 
 ```bash
-mini-acm hub create --config hub.yaml
+mini-mock hub create --config hub.yaml
 ```
 
 1. Write `install-config.yaml` + `agent-config.yaml` under workDir.
 2. `openshift-install agent create image` → `agent.x86_64.iso`.
 3. Ensure libvirt network; create SNO VM; attach ISO; boot.
 4. Wait bootstrap + install-complete.
-5. `mini-acm hub install-acm` → MCE + MultiClusterHub.
+5. `mini-mock hub install-acm` → MCE + MultiClusterHub.
 
 **OS truth:** control plane is **RHCOS**, provisioned by the Agent ISO. The provisioning host may be RHEL; the SNO node is not “RHEL + RPM OpenShift”.
 
 ## Phase 2 — Managed compact cluster
 
 ```bash
-mini-acm cluster create --config cluster.yaml
+mini-mock cluster create --config cluster.yaml
 ```
 
 1. Ensure network; emit HAProxy + dnsmasq fragments.
 2. Create three master VMs (MACs/IPs reserved in config).
 3. Emit `acm-resources.yaml`: **ClusterDeployment** + **AgentClusterInstall** + **InfraEnv** (agent-based path — not one generic Cluster CRD).
 4. On hub: create ns + pull-secret (+ ClusterImageSet if missing); apply CRs; **download discovery ISO** from InfraEnv status.
-5. `mini-acm cluster attach-iso --iso discovery.iso`.
+5. `mini-mock cluster attach-iso --iso discovery.iso`.
 6. Approve/bind Agents as control-plane; watch install; ManagedCluster import.
 
 `provider.type` selects the VM adapter (libvirt). ACM CRs stay `agentBareMetal` for this lifecycle. One size profile per cluster in MVP (no per-adapter sizing matrix yet).
@@ -58,6 +58,6 @@ mini-acm cluster create --config cluster.yaml
 ## Destroy
 
 ```bash
-mini-acm cluster destroy --config cluster.yaml --yes
-mini-acm hub destroy --config hub.yaml --yes [--purge]
+mini-mock cluster destroy --config cluster.yaml --yes
+mini-mock hub destroy --config hub.yaml --yes [--purge]
 ```

@@ -53,8 +53,8 @@ func TestCreateAndDelete(t *testing.T) {
 }
 
 func TestProbeSeedIfReachable(t *testing.T) {
-	if os.Getenv("MINI_ACM_PROBE_LIVE") != "1" {
-		t.Skip("set MINI_ACM_PROBE_LIVE=1 to run live SSH probe")
+	if os.Getenv("MINI_MOCK_PROBE_LIVE") != "1" {
+		t.Skip("set MINI_MOCK_PROBE_LIVE=1 to run live SSH probe")
 	}
 	dir := t.TempDir()
 	// use real home key

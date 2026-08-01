@@ -10,9 +10,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/dasmlab/mini-acm/internal/acm"
-	"github.com/dasmlab/mini-acm/internal/config"
-	"github.com/dasmlab/mini-acm/internal/provider"
+	"github.com/dasmlab/mini-mock/internal/acm"
+	"github.com/dasmlab/mini-mock/internal/config"
+	"github.com/dasmlab/mini-mock/internal/provider"
 )
 
 // Options control create behavior.
@@ -69,7 +69,7 @@ func localAgentCreate(ctx context.Context, cfg *config.HubConfig, p provider.Pro
 	if err != nil {
 		if opts.DryRun || opts.Manual {
 			fmt.Fprintf(os.Stderr, "warning: %v — using placeholder SSH key for dry-run/manual\n", err)
-			sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMiniAcmDryRunPlaceholder lab@mini-acm"
+			sshKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMiniMockDryRunPlaceholder lab@mini-mock"
 		} else {
 			return fmt.Errorf("ssh key: %w", err)
 		}
@@ -320,7 +320,7 @@ func printManualHubNext(cfg *config.HubConfig, iso string, opts Options) {
 	fmt.Printf("3. openshift-install agent wait-for bootstrap-complete --dir %s\n", cfg.Hub.WorkDir)
 	fmt.Printf("4. openshift-install agent wait-for install-complete --dir %s\n", cfg.Hub.WorkDir)
 	fmt.Printf("5. export KUBECONFIG=%s/auth/kubeconfig\n", cfg.Hub.WorkDir)
-	fmt.Println("6. Install MCE + ACM (mini-acm hub install-acm --config ...)")
+	fmt.Println("6. Install MCE + ACM (mini-mock hub install-acm --config ...)")
 	if opts.Manual {
 		fmt.Println("(manual mode: provider commands printed above; no wait)")
 	}

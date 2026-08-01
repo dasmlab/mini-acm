@@ -4,7 +4,7 @@
 
 ## In
 
-1. Go CLI (`mini-acm`) with Cobra, Makefile, Containerfile (UBI), example configs.
+1. Go CLI (`mini-mock`) with Cobra, Makefile, Containerfile (UBI), example configs.
 2. `hub create` — local Agent-based Installer inputs + libvirt SNO VM + optional ACM manifests.
 3. `cluster create` — isolated libvirt network hints, 3 VMs, HAProxy/dnsmasq templates, ACM CR YAML.
 4. `--manual` / `--dry-run` escape hatches for every destructive virt step.

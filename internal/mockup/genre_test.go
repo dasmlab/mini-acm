@@ -7,9 +7,9 @@ func TestCatalogHasMiniACM(t *testing.T) {
 	if len(c.Genres) < 2 {
 		t.Fatalf("want genres, got %d", len(c.Genres))
 	}
-	s := LookupStyle(StyleMiniACMMultiCluster)
+	s := LookupStyle(StyleACMMultiCluster)
 	if s == nil || !s.Available {
-		t.Fatal("mini-acm style must be available")
+		t.Fatal("mini-mock style must be available")
 	}
 	sno := LookupStyle(StyleSingleSNOOCP)
 	if sno == nil || !sno.Available {
@@ -26,14 +26,14 @@ func TestCatalogHasMiniACM(t *testing.T) {
 
 func TestResolveCreateStyle(t *testing.T) {
 	g, st, def, err := ResolveCreateStyle("", "")
-	if err != nil || g != GenreClusterManagement || st != StyleMiniACMMultiCluster || def == nil {
+	if err != nil || g != GenreClusterManagement || st != StyleACMMultiCluster || def == nil {
 		t.Fatalf("defaults: g=%s st=%s err=%v", g, st, err)
 	}
 	_, _, _, err = ResolveCreateStyle(GenreApplicationDevelopment, StyleWindowsUI)
 	if err == nil {
 		t.Fatal("expected stub style rejected")
 	}
-	_, _, _, err = ResolveCreateStyle(GenreApplicationDevelopment, StyleMiniACMMultiCluster)
+	_, _, _, err = ResolveCreateStyle(GenreApplicationDevelopment, StyleACMMultiCluster)
 	if err == nil {
 		t.Fatal("expected genre mismatch")
 	}
@@ -49,7 +49,7 @@ func TestCreateSetsGenreStyle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Spec.Genre != GenreClusterManagement || m.Spec.Style != StyleMiniACMMultiCluster {
+	if m.Spec.Genre != GenreClusterManagement || m.Spec.Style != StyleACMMultiCluster {
 		t.Fatalf("genre/style: %s / %s", m.Spec.Genre, m.Spec.Style)
 	}
 }

@@ -1,6 +1,6 @@
 # Example ACM-managed compact 3-node cluster (schedulable masters, 0 workers).
 # Apply generated acm-resources.yaml on the hub after pull-secret Secret exists.
-apiVersion: mini-acm.dasmlab.org/v1alpha1
+apiVersion: mini-mock.dasmlab.org/v1alpha1
 kind: ManagedCluster
 metadata:
   name: dev01

@@ -7,7 +7,7 @@
       <q-btn flat dense icon="refresh" label="Refresh" @click="load" />
     </div>
     <p class="text-body2 text-grey-7 q-mb-lg">
-      Product blueprints by genre — today <strong>Cluster Management → MINI ACM</strong>;
+      Product blueprints by genre — today <strong>Cluster Management → mini-mock</strong>;
       Application / Infra styles are catalogued for later.
     </p>
 
@@ -17,7 +17,7 @@
 
     <q-banner v-else-if="error" class="bg-orange-1 text-orange-9 q-mb-lg" rounded>
       <template #avatar><q-icon name="cloud_off" color="orange-9" /></template>
-      Could not reach the API ({{ error }}). Run <code>mini-acm serve</code> on :8080.
+      Could not reach the API ({{ error }}). Run <code>mini-mock serve</code> on :8080.
     </q-banner>
 
     <div v-else-if="mockups.length === 0" class="text-center text-grey-7 q-my-xl">
@@ -41,7 +41,7 @@
             </div>
             <div class="text-caption text-grey-6">
               {{ m.spec?.baseDomain }} · {{ m.spec?.provider }}
-              <template v-if="isMiniACM(m)">
+              <template v-if="isACMMultiCluster(m)">
                 · OCP-MGMT + ACM + {{ (m.spec?.clusters || []).length }} OCP-DEPLOY
               </template>
               <template v-else-if="isSingleSNO(m)">
@@ -90,14 +90,14 @@
           />
           <q-input v-model="form.name" filled label="Name" class="q-mb-md" hint="e.g. lab-rack-1" />
           <q-input
-            v-if="isMiniACMForm"
+            v-if="isClusterForm"
             v-model="form.baseDomain"
             filled
             label="Base domain"
             class="q-mb-md"
           />
           <q-select
-            v-if="isMiniACMForm"
+            v-if="isClusterForm"
             v-model="form.provider"
             :options="['libvirt']"
             filled
@@ -135,7 +135,7 @@ const creating = ref(false)
 const deriveBusy = ref('')
 const form = reactive({
   genre: 'cluster-management',
-  style: 'mini-acm-multi-cluster',
+  style: 'acm-multi-cluster',
   name: 'lab-rack-1',
   baseDomain: 'lab.example.net',
   provider: 'libvirt',
@@ -165,12 +165,12 @@ const selectedStyle = computed(() =>
 )
 
 const styleHint = computed(() => selectedStyle.value?.description || '')
-const isMiniACMForm = computed(() =>
-  form.style === 'mini-acm-multi-cluster' || form.style === 'single-sno-ocp',
+const isClusterForm = computed(() =>
+  form.style === 'acm-multi-cluster' || form.style === 'single-sno-ocp',
 )
 
-function isMiniACM(m) {
-  return !m.spec?.style || m.spec.style === 'mini-acm-multi-cluster'
+function isACMMultiCluster(m) {
+  return !m.spec?.style || m.spec.style === 'acm-multi-cluster'
 }
 
 function isSingleSNO(m) {
@@ -179,9 +179,9 @@ function isSingleSNO(m) {
 
 function styleLabel(m) {
   const genre = (catalog.value.genres || []).find((g) => g.id === (m.spec?.genre || 'cluster-management'))
-  const style = (catalog.value.styles || []).find((s) => s.id === (m.spec?.style || 'mini-acm-multi-cluster'))
+  const style = (catalog.value.styles || []).find((s) => s.id === (m.spec?.style || 'acm-multi-cluster'))
   const g = genre?.label || m.spec?.genre || 'Cluster Management'
-  const st = style?.label || m.spec?.style || 'MINI ACM'
+  const st = style?.label || m.spec?.style || 'mini-mock'
   return `${g} · ${st}`
 }
 
@@ -203,7 +203,7 @@ function onGenreChange() {
 
 function openCreate() {
   form.genre = 'cluster-management'
-  form.style = 'mini-acm-multi-cluster'
+  form.style = 'acm-multi-cluster'
   createOpen.value = true
 }
 

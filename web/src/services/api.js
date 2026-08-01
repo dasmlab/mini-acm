@@ -3,6 +3,7 @@ import axios from 'axios'
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
   timeout: 30_000,
+  withCredentials: true,
 })
 
 export default api
@@ -10,6 +11,26 @@ export default api
 export async function getHealth() {
   const { data } = await api.get('/health')
   return data
+}
+
+export async function getAuthConfig() {
+  const { data } = await api.get('/auth/config')
+  return data
+}
+
+export async function getMe() {
+  const { data } = await api.get('/auth/me')
+  return data
+}
+
+export function loginUrl() {
+  const base = api.defaults.baseURL || '/api/v1'
+  return `${base}/auth/login`
+}
+
+export function logoutUrl() {
+  const base = api.defaults.baseURL || '/api/v1'
+  return `${base}/auth/logout`
 }
 
 export async function listProfiles() {

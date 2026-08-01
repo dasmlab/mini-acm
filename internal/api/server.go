@@ -1,7 +1,8 @@
-// Package api serves the mini-acm UI + MockUp REST API.
+// Package api serves the mini-mock UI + MockUp REST API.
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,21 +12,26 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/dasmlab/mini-acm/internal/inventory"
-	"github.com/dasmlab/mini-acm/internal/mockup"
+	"github.com/dasmlab/mini-mock/internal/auth"
+	"github.com/dasmlab/mini-mock/internal/inventory"
+	"github.com/dasmlab/mini-mock/internal/mockup"
 )
 
 type Server struct {
 	store     *mockup.Store
 	inventory *inventory.Store
+	auth      *auth.Service
 	dataDir   string
 	buildVer  string
 	static    http.Handler
 	router    chi.Router
 }
 
-func New(store *mockup.Store, inv *inventory.Store, dataDir, buildVer string, static http.Handler) *Server {
-	s := &Server{store: store, inventory: inv, dataDir: dataDir, buildVer: buildVer, static: static}
+func New(store *mockup.Store, inv *inventory.Store, authSvc *auth.Service, dataDir, buildVer string, static http.Handler) *Server {
+	if authSvc == nil {
+		authSvc, _ = auth.New(context.Background(), auth.Config{})
+	}
+	s := &Server{store: store, inventory: inv, auth: authSvc, dataDir: dataDir, buildVer: buildVer, static: static}
 	s.router = s.routes()
 	return s
 }
@@ -39,12 +45,20 @@ func ListenAndServe(addr string, h http.Handler) error {
 func (s *Server) routes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
-		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type"},
-		MaxAge:         300,
-	}))
+	corsOpts := cors.Options{
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}
+	if s.auth != nil && s.auth.Enabled() {
+		// Reflect request Origin when SSO cookies are in play (cannot use *).
+		corsOpts.AllowOriginFunc = func(_ *http.Request, origin string) bool { return origin != "" }
+	} else {
+		corsOpts.AllowedOrigins = []string{"*"}
+		corsOpts.AllowCredentials = false
+	}
+	r.Use(cors.Handler(corsOpts))
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/isalive", s.healthz)
@@ -52,27 +66,37 @@ func (s *Server) routes() chi.Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", s.healthz)
 		r.Get("/version", s.version)
-		r.Get("/profiles", s.profiles)
-		r.Get("/catalog", s.catalog)
+		r.Get("/auth/config", s.authConfig)
+		r.Get("/auth/login", s.auth.Login)
+		r.Get("/auth/callback", s.auth.Callback)
+		r.Get("/auth/logout", s.auth.Logout)
+		r.Get("/auth/me", s.auth.Me)
+		r.Get("/auth/keepalive", s.auth.KeepAlive)
 
-		r.Get("/mockups", s.listMockups)
-		r.Post("/mockups", s.createMockup)
-		r.Get("/mockups/{id}", s.getMockup)
-		r.Put("/mockups/{id}", s.putMockup)
-		r.Patch("/mockups/{id}/layout", s.patchLayout)
-		r.Post("/mockups/{id}/clusters", s.addCluster)
-		r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
-		r.Post("/mockups/{id}/derive", s.derive)
-		r.Post("/mockups/{id}/validate", s.validateMockup)
-		r.Delete("/mockups/{id}", s.deleteMockup)
+		r.Group(func(r chi.Router) {
+			r.Use(s.auth.AdminMiddleware)
+			r.Get("/profiles", s.profiles)
+			r.Get("/catalog", s.catalog)
 
-		r.Get("/inventory", s.listInventory)
-		r.Post("/inventory", s.createInventory)
-		r.Get("/inventory/{id}", s.getInventory)
-		r.Put("/inventory/{id}", s.putInventory)
-		r.Post("/inventory/{id}/probe", s.probeInventory)
-		r.Post("/inventory/{id}/fix", s.fixInventory)
-		r.Delete("/inventory/{id}", s.deleteInventory)
+			r.Get("/mockups", s.listMockups)
+			r.Post("/mockups", s.createMockup)
+			r.Get("/mockups/{id}", s.getMockup)
+			r.Put("/mockups/{id}", s.putMockup)
+			r.Patch("/mockups/{id}/layout", s.patchLayout)
+			r.Post("/mockups/{id}/clusters", s.addCluster)
+			r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
+			r.Post("/mockups/{id}/derive", s.derive)
+			r.Post("/mockups/{id}/validate", s.validateMockup)
+			r.Delete("/mockups/{id}", s.deleteMockup)
+
+			r.Get("/inventory", s.listInventory)
+			r.Post("/inventory", s.createInventory)
+			r.Get("/inventory/{id}", s.getInventory)
+			r.Put("/inventory/{id}", s.putInventory)
+			r.Post("/inventory/{id}/probe", s.probeInventory)
+			r.Post("/inventory/{id}/fix", s.fixInventory)
+			r.Delete("/inventory/{id}", s.deleteInventory)
+		})
 	})
 
 	if s.static != nil {
@@ -80,6 +104,10 @@ func (s *Server) routes() chi.Router {
 		r.Get("/*", s.static.ServeHTTP)
 	}
 	return r
+}
+
+func (s *Server) authConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.auth.ConfigInfo())
 }
 
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {

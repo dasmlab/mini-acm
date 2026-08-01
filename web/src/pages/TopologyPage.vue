@@ -35,7 +35,7 @@
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
         <q-list style="min-width: 340px">
           <q-item-label header>{{ isFreeForm ? 'Free-form palette' : 'Guided add' }}</q-item-label>
-          <q-item v-if="isMiniACM" clickable v-close-popup @click="onAddCluster">
+          <q-item v-if="isACMMultiCluster" clickable v-close-popup @click="onAddCluster">
             <q-item-section avatar><q-icon name="developer_board" color="primary" /></q-item-section>
             <q-item-section>
               <q-item-label>OCP-DEPLOY cluster</q-item-label>
@@ -45,7 +45,7 @@
           <q-item v-else disable>
             <q-item-section avatar><q-icon name="developer_board" color="grey" /></q-item-section>
             <q-item-section>
-              <q-item-label>OCP-DEPLOY (MINI ACM only)</q-item-label>
+              <q-item-label>OCP-DEPLOY (mini-mock only)</q-item-label>
               <q-item-label caption>Single SNO style stops at OCP-MGMT</q-item-label>
             </q-item-section>
           </q-item>
@@ -166,8 +166,8 @@
         <span v-if="layer === 'network'" class="legend-item"><i class="swatch swatch-vswitch" /> vSwitch</span>
         <span v-if="layer === 'network'" class="legend-item"><i class="swatch swatch-vnic" /> vNIC</span>
         <span v-if="layer === 'all' || layer === 'cluster'" class="legend-item"><i class="swatch swatch-mgmt" /> OCP-MGMT</span>
-        <span v-if="(layer === 'all' || layer === 'cluster') && isMiniACM" class="legend-item"><i class="swatch swatch-dep" /> OCP-DEPLOY</span>
-        <span v-if="(layer === 'all' || layer === 'cluster' || layer === 'app') && isMiniACM" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
+        <span v-if="(layer === 'all' || layer === 'cluster') && isACMMultiCluster" class="legend-item"><i class="swatch swatch-dep" /> OCP-DEPLOY</span>
+        <span v-if="(layer === 'all' || layer === 'cluster' || layer === 'app') && isACMMultiCluster" class="legend-item"><i class="swatch swatch-acm" /> ACM</span>
         <span class="legend-hint">{{ layerHint }}</span>
       </div>
 
@@ -344,7 +344,7 @@ let layoutTimer = null
 
 const isFreeForm = computed(() => canvasMode.value === 'freeform')
 const isSingleSNO = computed(() => mockup.value?.spec?.style === 'single-sno-ocp')
-const isMiniACM = computed(() => !mockup.value?.spec?.style || mockup.value.spec.style === 'mini-acm-multi-cluster')
+const isACMMultiCluster = computed(() => !mockup.value?.spec?.style || mockup.value.spec.style === 'acm-multi-cluster')
 
 const layerOptions = computed(() => {
   const all = [
@@ -371,7 +371,7 @@ const layerHint = computed(() => {
   }
   if (layer.value === 'cluster') {
     return isSingleSNO.value
-      ? 'OCP-MGMT (SNO) — stop before ACM; promote style to MINI ACM to add ACM + OCP-DEPLOY'
+      ? 'OCP-MGMT (SNO) — stop before ACM; promote style to mini-mock to add ACM + OCP-DEPLOY'
       : 'OCP objects — ACM on OCP-MGMT governs OCP-DEPLOY (not full self-mgmt yet)'
   }
   if (layer.value === 'app') {
@@ -390,7 +390,7 @@ const LAYER_ROWS = {
 
 const objectSummary = computed(() => {
   if (!mockup.value) return ''
-  const style = mockup.value.spec.style || 'mini-acm-multi-cluster'
+  const style = mockup.value.spec.style || 'acm-multi-cluster'
   const clusters = mockup.value.spec.clusters || []
   const n = clusters.length
   const guests = enumerateVHosts(mockup.value).length
@@ -398,7 +398,7 @@ const objectSummary = computed(() => {
   if (style === 'single-sno-ocp') {
     return `Single SNO · adapter ${p} · ${guests} vHosts · OCP-MGMT`
   }
-  return `MINI ACM · adapter ${p} · ${guests} vHosts · OCP-MGMT · ${n} OCP-DEPLOY`
+  return `mini-mock · adapter ${p} · ${guests} vHosts · OCP-MGMT · ${n} OCP-DEPLOY`
 })
 
 const objectRows = computed(() => {
@@ -504,7 +504,7 @@ const selectedNodeData = computed(() => {
       id: 'adapter',
       provider: mockup.value.spec.provider || 'libvirt',
       mode: 'local',
-      notes: 'mini-acm (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
+      notes: 'mini-mock (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
     }
   }
   if (k === 'vhost') {

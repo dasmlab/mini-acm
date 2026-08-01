@@ -4,12 +4,25 @@
       <q-toolbar>
         <q-btn flat dense round icon="menu" aria-label="Menu" @click="leftDrawerOpen = !leftDrawerOpen" />
         <q-icon name="hub" size="sm" class="q-mx-sm" />
-        <q-toolbar-title>mini-acm</q-toolbar-title>
+        <q-toolbar-title>mini-mock</q-toolbar-title>
         <q-chip square dense color="white" text-color="primary" class="q-mr-sm">{{ versionLabel }}</q-chip>
+        <template v-if="auth.ready.value">
+          <span v-if="auth.authEnabled.value && auth.isAuthenticated.value" class="text-caption q-mr-sm">
+            {{ auth.displayName.value }}
+          </span>
+          <q-btn
+            v-if="auth.authEnabled.value && auth.isAuthenticated.value"
+            flat dense icon="logout" label="Logout" @click="auth.logout()"
+          />
+          <q-btn
+            v-else-if="auth.authEnabled.value"
+            flat dense icon="login" label="Login" @click="auth.login()"
+          />
+        </template>
       </q-toolbar>
       <div class="warning-banner text-center q-py-xs text-caption">
         <q-icon name="science" size="xs" class="q-mb-xs" />
-        LAB / TEST / DEV ONLY — virtual rack for ACM lifecycle demos
+        LAB / TEST / DEV ONLY — mini-mock · MockUp canvases (ACM Multi-Cluster first)
         <q-icon name="science" size="xs" class="q-mb-xs" />
       </div>
     </q-header>
@@ -55,11 +68,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { getHealth } from 'src/services/api'
+import { useAuth } from 'src/services/auth'
 
+const auth = useAuth()
 const leftDrawerOpen = ref(false)
 const versionLabel = ref('…')
 
 onMounted(async () => {
+  await auth.init()
   try {
     const h = await getHealth()
     versionLabel.value = h.version || 'dev'

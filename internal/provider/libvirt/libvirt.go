@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dasmlab/mini-acm/internal/provider"
+	"github.com/dasmlab/mini-mock/internal/provider"
 )
 
 func init() {
@@ -88,7 +88,7 @@ func (l *Libvirt) EnsureNetwork(ctx context.Context, net provider.NetworkSpec) e
 	}
 
 	// Ignore define errors if network already exists; always try start.
-	tmp, err := os.CreateTemp("", "mini-acm-net-*.xml")
+	tmp, err := os.CreateTemp("", "mini-mock-net-*.xml")
 	if err != nil {
 		return err
 	}

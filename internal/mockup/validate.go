@@ -42,7 +42,7 @@ func ValidateTopology(m *MockUp) ValidationResult {
 	}
 	style := m.Spec.Style
 	if style == "" {
-		style = StyleMiniACMMultiCluster
+		style = StyleACMMultiCluster
 	}
 	isSNOOnly := style == StyleSingleSNOOCP
 
@@ -62,17 +62,17 @@ func ValidateTopology(m *MockUp) ValidationResult {
 		if hasACM {
 			res.Issues = append(res.Issues, ValidationIssue{
 				Code: "sno-unexpected-acm", Severity: "warn", Object: m.Spec.ACM.ID,
-				Message: "ACM is enabled but this style stops before ACM — hide/disable ACM, or switch style to MINI ACM Multi-Cluster.",
+				Message: "ACM is enabled but this style stops before ACM — hide/disable ACM, or switch style to ACM Multi-Cluster.",
 			})
 		}
 		if len(clusters) > 0 {
 			res.Issues = append(res.Issues, ValidationIssue{
 				Code: "sno-unexpected-deploy", Severity: "warn",
-				Message: "Deployment clusters are present on a Single SNO MockUp — remove them, or use MINI ACM Multi-Cluster.",
+				Message: "Deployment clusters are present on a Single SNO MockUp — remove them, or use ACM Multi-Cluster.",
 			})
 		}
 	} else {
-		// MINI ACM (and default): ACM lab picture
+		// mini-mock (and default): ACM lab picture
 		if hasACM && !hasHub {
 			res.Issues = append(res.Issues, ValidationIssue{
 				Code: "acm-needs-mgmt", Severity: "error", Object: m.Spec.ACM.ID,

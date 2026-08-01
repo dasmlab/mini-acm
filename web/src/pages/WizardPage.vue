@@ -88,7 +88,7 @@
               <q-input v-model="mockup.spec.gaps.sshPublicKeyFile" outlined dense label="SSH public key path" class="q-mb-md"
                 hint="Required — $SSH_PUBLIC_KEY_FILE or ~/.ssh/id_ed25519.pub" />
               <q-banner class="bg-grey-2" rounded dense>
-                <code>mini-acm --manual hub create --config data/mockups/{{ id }}/out/hub.yaml --skip-wait --skip-acm</code>
+                <code>mini-mock --manual hub create --config data/mockups/{{ id }}/out/hub.yaml --skip-wait --skip-acm</code>
               </q-banner>
             </div>
           </div>
@@ -110,7 +110,7 @@
               <q-input v-model="mockup.spec.gaps.hubKubeconfig" outlined dense label="Hub kubeconfig path" class="q-mb-md"
                 :hint="`Suggested: ./data/hub-${mockup.metadata.name}/auth/kubeconfig`" />
               <q-banner class="bg-grey-2" rounded dense>
-                <code>mini-acm hub install-acm --config data/mockups/{{ id }}/out/hub.yaml</code>
+                <code>mini-mock hub install-acm --config data/mockups/{{ id }}/out/hub.yaml</code>
               </q-banner>
             </div>
           </div>
@@ -156,7 +156,7 @@
                   <q-input v-model="c.ingressVIP" outlined dense label="Ingress VIP" class="q-mb-sm" />
                   <q-input v-model="c.ipBase" outlined dense label="Node IP base" class="q-mb-sm" />
                   <q-banner dense rounded class="bg-grey-2 text-caption">
-                    <code>mini-acm --manual cluster create --config …/out/cluster-{{ c.name }}.yaml</code>
+                    <code>mini-mock --manual cluster create --config …/out/cluster-{{ c.name }}.yaml</code>
                   </q-banner>
                 </q-card-section>
                 <q-card-actions align="right">
@@ -191,7 +191,7 @@
                   <q-input v-model="c.discoveryISO" outlined dense label="Discovery ISO path" class="q-mt-sm"
                     :hint="`MVP gap — InfraEnv status.isoDownloadURL → ./discovery-${c.name}.iso`" />
                   <q-banner dense rounded class="bg-grey-2 q-mt-sm text-caption">
-                    <code>mini-acm cluster attach-iso --config …/cluster-{{ c.name }}.yaml --iso {{ c.discoveryISO || `./discovery-${c.name}.iso` }}</code>
+                    <code>mini-mock cluster attach-iso --config …/cluster-{{ c.name }}.yaml --iso {{ c.discoveryISO || `./discovery-${c.name}.iso` }}</code>
                   </q-banner>
                 </q-card-section>
               </q-card>
