@@ -74,6 +74,11 @@
             {{ m.status.message }}
           </div>
 
+          <div v-if="eeBlockReason && !isLocked(m)" class="card-status warn">
+            Deploy blocked — {{ eeBlockReason }}
+            <router-link class="inv-link" :to="{ name: 'inventory' }">Open Inventory</router-link>
+          </div>
+
           <div class="card-actions">
             <q-btn
               unelevated
@@ -118,7 +123,9 @@
               :loading="deployBusy === m.metadata.id"
               :disable="isLocked(m) || phaseBusy(m) || !canDeploy(m)"
               @click="doDeploy(m)"
-            />
+            >
+              <q-tooltip v-if="eeBlockReason">{{ eeBlockReason }}</q-tooltip>
+            </q-btn>
             <q-space />
             <q-btn
               v-if="isFailed(m) || isDeploying(m)"
@@ -168,10 +175,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Dialog, Notify } from 'quasar'
 import {
-  listMockups, deleteMockup, deriveMockup, validateMockup, deployMockup, cleanMockup, getCatalog,
+  listMockups, deleteMockup, deriveMockup, validateMockup, deployMockup, cleanMockup, getCatalog, listInventory,
 } from 'src/services/api'
 import CreateMockUpDialog from 'src/components/CreateMockUpDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
@@ -179,6 +186,7 @@ import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 
 const mockups = ref([])
 const catalog = ref({ genres: [], styles: [] })
+const inventory = ref([])
 const loading = ref(true)
 const error = ref('')
 const createOpen = ref(false)
@@ -192,6 +200,32 @@ const deployJob = ref(null)
 const validateOpen = ref(false)
 const validateTarget = ref(null)
 const validateResult = ref(null)
+
+/** Prefer seed / ready host — same resolution spirit as the API. */
+const deployInventoryHost = computed(() => {
+  const list = inventory.value || []
+  return list.find((h) => h.seed)
+    || list.find((h) => h.status === 'reachable')
+    || list[0]
+    || null
+})
+
+/** Why Deploy cannot start (Inventory EE prereqs). Empty = OK. */
+const eeBlockReason = computed(() => {
+  const h = deployInventoryHost.value
+  if (!h) return 'No Inventory MACHINE-HOST — add and Probe one first'
+  if (h.status === 'unreachable') return `${h.name} is unreachable — Probe Inventory`
+  if (h.status === 'partial') return `${h.name} is partial (libvirt) — Fix this on Inventory`
+  const oi = String(h.facts?.openshiftInstall || '').trim()
+  if (!oi || oi === 'missing') {
+    return `openshift-install missing on ${h.name} — install the client on that host, then Probe`
+  }
+  const pod = String(h.facts?.podman || '').trim().toLowerCase()
+  if (!pod || pod === 'missing' || pod.includes('missing')) {
+    return `podman missing on ${h.name} — Fix this on Inventory`
+  }
+  return ''
+})
 
 function isACMMultiCluster(m) {
   return !m.spec?.style || m.spec.style === 'acm-multi-cluster'
@@ -243,7 +277,10 @@ function isLocked(m) {
 
 function canDeploy(m) {
   const p = m.status?.phase || 'created'
-  return ['configured', 'validated', 'deployed', 'hub-ready', 'acm-ready', 'created'].includes(p)
+  if (!['configured', 'validated', 'deployed', 'hub-ready', 'acm-ready', 'created'].includes(p)) {
+    return false
+  }
+  return !eeBlockReason.value
 }
 
 function openCreate() {
@@ -254,9 +291,14 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [list, cat] = await Promise.all([listMockups(), getCatalog().catch(() => ({ genres: [], styles: [] }))])
+    const [list, cat, inv] = await Promise.all([
+      listMockups(),
+      getCatalog().catch(() => ({ genres: [], styles: [] })),
+      listInventory().catch(() => []),
+    ])
     mockups.value = list || []
     catalog.value = cat || { genres: [], styles: [] }
+    inventory.value = inv || []
   } catch (e) {
     error.value = e.message
     mockups.value = []
@@ -572,6 +614,13 @@ onMounted(load)
   color: #e65100;
   border-left-color: #ef6c00;
   font-weight: 600;
+}
+
+.inv-link {
+  margin-left: 0.45rem;
+  color: #1565c0;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 .card-actions {

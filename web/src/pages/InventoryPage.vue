@@ -10,27 +10,31 @@
       <q-btn color="primary" icon="add" label="Add host" @click="openCreate" />
     </div>
 
-    <div class="row q-gutter-sm q-mb-md text-caption">
+    <div class="row q-gutter-sm q-mb-md text-caption items-center">
       <q-badge color="negative">unreachable</q-badge>
       <span class="text-grey-7">no TCP / SSH</span>
       <q-badge color="warning">partial</q-badge>
-      <span class="text-grey-7">SSH OK · missing libvirt/podman</span>
-      <q-badge color="positive">ready</q-badge>
-      <span class="text-grey-7">libvirt up · can orchestrate</span>
+      <span class="text-grey-7">SSH OK · missing libvirt</span>
+      <q-badge color="positive">libvirt ready</q-badge>
+      <span class="text-grey-7">can orchestrate infra</span>
+      <q-badge color="orange-9">deploy blocked</q-badge>
+      <span class="text-grey-7">missing openshift-install / podman for OCP Deploy</span>
     </div>
 
     <div v-if="loading" class="row justify-center q-my-xl"><q-spinner size="3em" color="primary" /></div>
 
     <q-list v-else bordered class="rounded-borders bg-white">
-      <q-item v-for="h in hosts" :key="h.id" class="q-py-md">
+      <q-item v-for="h in hosts" :key="h.id" class="q-py-md" :class="{ 'deploy-blocked-row': isDeployBlocked(h) }">
         <q-item-section avatar>
-          <q-avatar :color="statusColor(h.status)" text-color="white" :icon="statusIcon(h.status)" />
+          <q-avatar :color="statusColor(h)" text-color="white" :icon="statusIcon(h)" />
         </q-item-section>
         <q-item-section>
           <q-item-label class="text-weight-medium">
             {{ h.name }}
             <q-badge v-if="h.seed" color="primary" outline class="q-ml-sm">SEED</q-badge>
-            <q-badge :color="statusColor(h.status)" class="q-ml-sm">{{ statusLabel(h.status) }}</q-badge>
+            <q-badge :color="statusColor(h)" class="q-ml-sm">{{ statusLabel(h) }}</q-badge>
+            <q-badge v-if="isDeployBlocked(h)" color="orange-9" class="q-ml-sm">deploy blocked</q-badge>
+            <q-badge v-else-if="h.status === 'reachable'" color="teal-8" class="q-ml-sm">deploy EE ok</q-badge>
           </q-item-label>
           <q-item-label caption>
             {{ h.sshUser }}@{{ effectiveHost(h) }}:{{ h.sshPort || 22 }}
@@ -41,19 +45,30 @@
             LAN {{ h.sshHost }} · via VPN {{ h.stretchedHost }}
           </q-item-label>
           <q-item-label caption v-if="h.statusMessage" class="q-mt-xs">{{ h.statusMessage }}</q-item-label>
+          <q-banner
+            v-if="isDeployBlocked(h)"
+            dense rounded
+            class="q-mt-sm bg-orange-1 text-orange-10"
+          >
+            <template #avatar><q-icon name="block" color="orange-9" /></template>
+            OCP Deploy needs <code>openshift-install</code> on this MACHINE-HOST (podman is present for EE).
+            Install the client matching your hub version, then Probe again — MockUps Deploy stays disabled until then.
+          </q-banner>
           <div v-if="h.issues?.length" class="q-mt-sm">
             <div
               v-for="iss in h.issues"
               :key="iss.id"
               class="text-caption q-mb-xs"
-              :class="iss.severity === 'error' ? 'text-orange-10' : 'text-grey-8'"
+              :class="iss.id === 'openshift-install-missing' || iss.severity === 'error' ? 'text-orange-10 text-weight-medium' : 'text-grey-8'"
             >
               · {{ iss.message }}
               <q-badge v-if="iss.fixable" dense color="warning" outline class="q-ml-xs">fixable</q-badge>
             </div>
           </div>
           <div v-if="h.facts && Object.keys(h.facts).length" class="q-mt-sm text-caption text-grey-7">
-            <span v-for="(v, k) in h.facts" :key="k" class="q-mr-md"><b>{{ k }}</b>: {{ v }}</span>
+            <span v-for="(v, k) in h.facts" :key="k" class="q-mr-md" :class="{ 'text-orange-10 text-weight-bold': k === 'openshiftInstall' && v === 'missing' }">
+              <b>{{ k }}</b>: {{ v }}
+            </span>
           </div>
         </q-item-section>
         <q-item-section side>
@@ -238,23 +253,35 @@ function effectiveHost(h) {
   return h.sshHost
 }
 
-function statusColor(s) {
+function statusColor(h) {
+  const s = typeof h === 'string' ? h : h?.status
   if (s === 'reachable') return 'positive'
   if (s === 'partial') return 'warning'
   if (s === 'unreachable') return 'negative'
   return 'grey'
 }
 
-function statusLabel(s) {
-  if (s === 'reachable') return 'ready'
+function statusLabel(h) {
+  const s = typeof h === 'string' ? h : h?.status
+  if (s === 'reachable') return 'libvirt ready'
   return s || 'unknown'
 }
 
-function statusIcon(s) {
-  if (s === 'reachable') return 'check_circle'
+function statusIcon(h) {
+  const s = typeof h === 'string' ? h : h?.status
+  if (s === 'reachable') return isDeployBlocked(h) ? 'warning' : 'check_circle'
   if (s === 'partial') return 'warning'
   if (s === 'unreachable') return 'error'
   return 'dns'
+}
+
+function isDeployBlocked(h) {
+  if (!h || typeof h !== 'object' || h.status !== 'reachable') return false
+  const oi = String(h.facts?.openshiftInstall || '').trim()
+  if (!oi || oi === 'missing') return true
+  const pod = String(h.facts?.podman || '').trim().toLowerCase()
+  if (!pod || pod === 'missing' || pod.includes('missing')) return true
+  return false
 }
 
 function hasFixable(h) {
@@ -421,6 +448,9 @@ onMounted(load)
 
 <style scoped>
 .wide { max-width: 1100px; margin: 0 auto; }
+.deploy-blocked-row {
+  background: #fff8f1;
+}
 .fix-log {
   margin: 0;
   white-space: pre-wrap;
