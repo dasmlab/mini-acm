@@ -1,4 +1,5 @@
-// Package mockup stores lab topology blueprints (MockUp = Target analogue).
+// Package mockup stores product canvases (MockUp). Genre + style select the offering
+// (e.g. cluster-management / mini-acm-multi-cluster); ACM lab rack is the first style.
 package mockup
 
 import (
@@ -43,6 +44,10 @@ type Metadata struct {
 }
 
 type Spec struct {
+	// Genre + Style select the product offering (catalog). Default: cluster-management / mini-acm-multi-cluster.
+	Genre string `json:"genre,omitempty" yaml:"genre,omitempty"`
+	Style string `json:"style,omitempty" yaml:"style,omitempty"`
+
 	BaseDomain string      `json:"baseDomain" yaml:"baseDomain"`
 	Provider   string      `json:"provider" yaml:"provider"`
 	Network    NetworkSpec `json:"network" yaml:"network"`
@@ -258,6 +263,8 @@ type CreateReq struct {
 	BaseDomain string `json:"baseDomain"`
 	Provider   string `json:"provider"`
 	Notes      string `json:"notes"`
+	Genre      string `json:"genre"`
+	Style      string `json:"style"`
 }
 
 func (s *Store) Create(req CreateReq) (*MockUp, error) {
@@ -270,9 +277,15 @@ func (s *Store) Create(req CreateReq) (*MockUp, error) {
 	if req.Provider == "" {
 		req.Provider = "libvirt"
 	}
+	genre, style, _, err := ResolveCreateStyle(req.Genre, req.Style)
+	if err != nil {
+		return nil, err
+	}
 	id := uuid.NewString()
 	now := time.Now().UTC().Format(time.RFC3339)
 	m := defaultMockUp(id, req.Name, req.BaseDomain, req.Provider, req.Notes, now)
+	m.Spec.Genre = genre
+	m.Spec.Style = style
 	if err := s.save(m); err != nil {
 		return nil, err
 	}
@@ -295,6 +308,8 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
 		},
 		Spec: Spec{
+			Genre:      GenreClusterManagement,
+			Style:      StyleMiniACMMultiCluster,
 			BaseDomain: domain,
 			Provider:   provider,
 			Network: NetworkSpec{
@@ -504,6 +519,12 @@ func (s *Store) Dir(id string) string {
 
 // normalize fills MVP-gap defaults and migrates legacy shared cluster gaps.
 func normalize(m *MockUp) {
+	if m.Spec.Genre == "" {
+		m.Spec.Genre = GenreClusterManagement
+	}
+	if m.Spec.Style == "" {
+		m.Spec.Style = StyleMiniACMMultiCluster
+	}
 	if m.Spec.CanvasMode == "" {
 		m.Spec.CanvasMode = "guided"
 	}

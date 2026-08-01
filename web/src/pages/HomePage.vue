@@ -4,7 +4,8 @@
       <div class="col">
         <div class="text-h4 q-mb-xs">mini-acm</div>
         <p class="text-body2 text-grey-7 q-mb-none home-lead">
-          One RHEL host. Libvirt guests. A VyOS edge. Mgmt SNO runs ACM; deployment clusters are managed on the lab LAN.
+          MockUp product canvases — today Cluster Management (MINI ACM multi-cluster on one RHEL host).
+          Application and Infra genres are on the catalog roadmap.
         </p>
       </div>
       <q-btn color="primary" unelevated label="Open MockUps" icon="account_tree"
@@ -18,7 +19,7 @@
         <span class="home-step-n">1</span>
         <span>
           <span class="home-step-t">MockUp</span>
-          <span class="home-step-d">Create a lab rack blueprint</span>
+          <span class="home-step-d">Pick a genre/style · create a blueprint</span>
         </span>
       </button>
       <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">

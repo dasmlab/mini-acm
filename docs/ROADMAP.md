@@ -10,6 +10,23 @@
 
 ## Target MockUp object model
 
+**MockUp** is the product canvas. Resource `kind` stays `MockUp`; **genre** + **style** select which offering you are authoring.
+
+```text
+Genre (product family)                    Style (template)
+──────────────────────                    ────────────────
+Cluster Management                    →   MINI ACM Multi-Cluster   ← implemented
+Application Development               →   Windows UI MockUp        (catalog stub)
+                                      →   Web Full-Stack App       (catalog stub)
+Infrastructure                        →   Node · Network · Payload (catalog stub)
+(+ Add Genre later: object types + relation rules)
+```
+
+Catalog API: `GET /api/v1/catalog` (object types + allowed relations per style).
+Existing racks without fields normalize to `cluster-management` / `mini-acm-multi-cluster`.
+
+### Style: MINI ACM Multi-Cluster
+
 ```text
 MockUp (canvas)
 ├── MACHINE-HOST     RHEL 9/10 where libvirtd runs (BM or nested). SSH e.g. 192.168.1.142
@@ -24,6 +41,14 @@ MockUp (canvas)
 ```
 
 Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
+
+### Style stubs (Application / Infra)
+
+- **Windows UI** — OS → client runtime (.NET/WPF, …) → windows/forms/controls → data inputs, devices, outputs, service calls (SDLC design; e.g. running-translate class of app).
+- **Web Full-Stack** — routes, FE/BE, APIs, stores.
+- **Infra Node/Network/Payload** — hosts and nets without ACM governance.
+
+Later: persist genres as data (`data/genres/*.yaml`), “Add a Genre” UI that defines object types + relation constraints used by Validate / palette.
 
 ## Topology views (UI)
 
@@ -100,6 +125,7 @@ Go `provider/libvirt` remains useful as a thin driver *or* as what playbooks wra
 ## Next (near-term)
 
 0. **Inventory (MACHINE-HOST targets)** — DONE MVP: seed `dasm@192.168.1.142`, CRUD, SSH probe (auth + libvirt readiness). Orchestrate/deploy against a plan is next.
+0b. **MockUp genres/styles** — DONE scaffold: `spec.genre` / `spec.style`, `GET /catalog`, create picker; only MINI ACM creatable. Next: seed stubs for Windows UI / Web / Infra; drive Validate from relation catalog; optional `data/genres` YAML + Add Genre.
 1. **Host bootstrap doc + script** — RHEL 9/10: subscription, `libvirt`/`qemu-kvm`/`podman`, nested-virt note, socket permissions for the container.
 2. **Container ↔ libvirt** — documented `podman run` (volume `/var/run/libvirt`, device, or ssh+bastion); smoke via Inventory **Probe** + later `GET /api/v1/infra/health`.
 3. **Deploy signal** — `POST …/mockups/{id}/deploy` queues a job against linked Inventory host; MVP may call Ansible locally or shell out to existing `hub create` / `cluster create` behind a job status UX.

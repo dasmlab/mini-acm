@@ -53,6 +53,7 @@ func (s *Server) routes() chi.Router {
 		r.Get("/health", s.healthz)
 		r.Get("/version", s.version)
 		r.Get("/profiles", s.profiles)
+		r.Get("/catalog", s.catalog)
 
 		r.Get("/mockups", s.listMockups)
 		r.Post("/mockups", s.createMockup)
@@ -101,6 +102,10 @@ func (s *Server) profiles(w http.ResponseWriter, _ *http.Request) {
 			{"id": "lab-small", "cpu": 4, "memoryMiB": 12288, "diskGiB": 120, "unsupported": true},
 		},
 	})
+}
+
+func (s *Server) catalog(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, mockup.Catalog())
 }
 
 func (s *Server) listMockups(w http.ResponseWriter, _ *http.Request) {

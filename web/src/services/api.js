@@ -17,6 +17,11 @@ export async function listProfiles() {
   return data
 }
 
+export async function getCatalog() {
+  const { data } = await api.get('/catalog')
+  return data
+}
+
 export async function listMockups() {
   const { data } = await api.get('/mockups')
   return data

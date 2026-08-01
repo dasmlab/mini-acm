@@ -1,0 +1,182 @@
+package mockup
+
+import "fmt"
+
+// Genre / Style identify which product offering a MockUp belongs to.
+// Resource kind stays "MockUp"; genre is the product family, style is the template.
+const (
+	GenreClusterManagement       = "cluster-management"
+	GenreApplicationDevelopment  = "application-development"
+	GenreInfrastructure          = "infrastructure"
+
+	StyleMiniACMMultiCluster = "mini-acm-multi-cluster"
+	StyleWindowsUI           = "windows-ui"
+	StyleWebFullStack        = "web-full-stack"
+	StyleInfraNodeNetwork    = "infra-node-network-payload"
+)
+
+// RelationRule constrains how object types may connect (validate / palette later).
+type RelationRule struct {
+	From        string `json:"from"`
+	Rel         string `json:"rel"`
+	To          string `json:"to"`
+	Cardinality string `json:"cardinality,omitempty"` // e.g. "1..1", "1..*", "0..*"
+	Notes       string `json:"notes,omitempty"`
+}
+
+// StyleDef is a creatable (or stub) template within a genre.
+type StyleDef struct {
+	ID           string         `json:"id"`
+	Genre        string         `json:"genre"`
+	Label        string         `json:"label"`
+	Description  string         `json:"description"`
+	Available    bool           `json:"available"` // false = catalog stub, create rejected
+	ObjectTypes  []string       `json:"objectTypes"`
+	Views        []string       `json:"views,omitempty"`
+	Relations    []RelationRule `json:"relations,omitempty"`
+	DefaultSeed  string         `json:"defaultSeed,omitempty"` // human hint
+}
+
+// GenreDef groups styles.
+type GenreDef struct {
+	ID          string   `json:"id"`
+	Label       string   `json:"label"`
+	Description string   `json:"description"`
+	Styles      []string `json:"styles"` // style ids
+}
+
+// CatalogResponse is GET /api/v1/catalog.
+type CatalogResponse struct {
+	Genres []GenreDef `json:"genres"`
+	Styles []StyleDef `json:"styles"`
+}
+
+// Catalog returns the product genre/style registry (code-defined for now;
+// later: data/genres/*.yaml + "Add a Genre" UI).
+func Catalog() CatalogResponse {
+	styles := []StyleDef{
+		{
+			ID: StyleMiniACMMultiCluster, Genre: GenreClusterManagement,
+			Label: "MINI ACM Multi-Cluster",
+			Description: "Mgmt OCP hosts ACM; managed deployment clusters on a lab rack (MACHINE-HOST → adapter → vHosts).",
+			Available: true,
+			ObjectTypes: []string{
+				"MachineHost", "Adapter", "VHost", "Gateway", "Hub", "ACM", "DeploymentCluster", "Appliance",
+			},
+			Views: []string{"all", "infra", "network", "cluster", "app"},
+			DefaultSeed: "lab rack with hub + ACM + 2 deployment clusters",
+			Relations: []RelationRule{
+				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
+				{From: "VHost", Rel: "hostedBy", To: "Adapter", Cardinality: "1..*"},
+				{From: "Gateway", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "VyOS on vHost-GW"},
+				{From: "Hub", Rel: "runsOn", To: "VHost", Cardinality: "1..1", Notes: "MGMT SNO guest"},
+				{From: "DeploymentCluster", Rel: "runsOn", To: "VHost", Cardinality: "1..*", Notes: "cp/worker guests"},
+				{From: "ACM", Rel: "runsOn", To: "Hub", Cardinality: "1..1"},
+				{From: "DeploymentCluster", Rel: "managedBy", To: "ACM", Cardinality: "1..*"},
+			},
+		},
+		{
+			ID: StyleWindowsUI, Genre: GenreApplicationDevelopment,
+			Label: "Windows UI MockUp",
+			Description: "Client app SDLC canvas: OS → runtime (.NET/WPF, …) → UI surfaces → data/devices/services. Inspired by apps like running-translate.",
+			Available: false,
+			ObjectTypes: []string{
+				"RunningOS", "ClientRuntime", "Window", "Form", "Control", "DataInput", "Device", "DataOutput", "ServiceCall",
+			},
+			Views: []string{"all", "runtime", "ui", "dataflow"},
+			DefaultSeed: "stub — empty Windows UI canvas (not seeded yet)",
+			Relations: []RelationRule{
+				{From: "ClientRuntime", Rel: "runsOn", To: "RunningOS", Cardinality: "1..1"},
+				{From: "Window", Rel: "hostedBy", To: "ClientRuntime", Cardinality: "1..*"},
+				{From: "Form", Rel: "contains", To: "Control", Cardinality: "0..*"},
+				{From: "Form", Rel: "navigatesTo", To: "Form", Cardinality: "0..*"},
+				{From: "Form", Rel: "reads", To: "DataInput", Cardinality: "0..*"},
+				{From: "Form", Rel: "writes", To: "DataOutput", Cardinality: "0..*"},
+				{From: "Form", Rel: "calls", To: "ServiceCall", Cardinality: "0..*"},
+			},
+		},
+		{
+			ID: StyleWebFullStack, Genre: GenreApplicationDevelopment,
+			Label: "Web Full-Stack Application",
+			Description: "Routes, FE/BE components, APIs, data stores — bread-and-butter app MockUps.",
+			Available: false,
+			ObjectTypes: []string{
+				"Route", "Frontend", "Backend", "API", "DataStore", "Auth", "ExternalService",
+			},
+			Views: []string{"all", "frontend", "backend", "data"},
+			DefaultSeed: "stub — empty web stack canvas (not seeded yet)",
+			Relations: []RelationRule{
+				{From: "Frontend", Rel: "calls", To: "API", Cardinality: "0..*"},
+				{From: "Backend", Rel: "exposes", To: "API", Cardinality: "0..*"},
+				{From: "Backend", Rel: "uses", To: "DataStore", Cardinality: "0..*"},
+				{From: "Route", Rel: "renders", To: "Frontend", Cardinality: "1..*"},
+			},
+		},
+		{
+			ID: StyleInfraNodeNetwork, Genre: GenreInfrastructure,
+			Label: "Infra · Node · Network · Payload",
+			Description: "Standalone infrastructure MockUp (hosts, nets, payloads) without ACM governance.",
+			Available: false,
+			ObjectTypes: []string{"MachineHost", "Adapter", "VHost", "Network", "Appliance", "Payload"},
+			Views:       []string{"all", "infra", "network", "payload"},
+			DefaultSeed: "stub — infra-focused canvas (not seeded yet)",
+			Relations: []RelationRule{
+				{From: "Adapter", Rel: "runsOn", To: "MachineHost", Cardinality: "1..1"},
+				{From: "VHost", Rel: "hostedBy", To: "Adapter", Cardinality: "1..*"},
+				{From: "Payload", Rel: "runsOn", To: "VHost", Cardinality: "0..*"},
+			},
+		},
+	}
+
+	genres := []GenreDef{
+		{
+			ID: GenreClusterManagement, Label: "Cluster Management",
+			Description: "Multi-cluster / fleet governance MockUps (ACM and future siblings).",
+			Styles: []string{StyleMiniACMMultiCluster},
+		},
+		{
+			ID: GenreApplicationDevelopment, Label: "Application Development",
+			Description: "Client and full-stack application design MockUps (UI, runtime, dataflow).",
+			Styles: []string{StyleWindowsUI, StyleWebFullStack},
+		},
+		{
+			ID: GenreInfrastructure, Label: "Infrastructure",
+			Description: "Hosts, networks, and payloads without a cluster-management control plane.",
+			Styles: []string{StyleInfraNodeNetwork},
+		},
+	}
+
+	return CatalogResponse{Genres: genres, Styles: styles}
+}
+
+// LookupStyle returns a style definition or nil.
+func LookupStyle(id string) *StyleDef {
+	for _, s := range Catalog().Styles {
+		if s.ID == id {
+			cp := s
+			return &cp
+		}
+	}
+	return nil
+}
+
+// ResolveCreateStyle picks genre/style for Create, defaulting to MINI ACM.
+func ResolveCreateStyle(genre, style string) (g, st string, def *StyleDef, err error) {
+	if style == "" {
+		style = StyleMiniACMMultiCluster
+	}
+	def = LookupStyle(style)
+	if def == nil {
+		return "", "", nil, fmt.Errorf("unknown style %q", style)
+	}
+	if genre == "" {
+		genre = def.Genre
+	}
+	if genre != def.Genre {
+		return "", "", nil, fmt.Errorf("style %q belongs to genre %q, not %q", style, def.Genre, genre)
+	}
+	if !def.Available {
+		return "", "", nil, fmt.Errorf("style %q (%s) is not creatable yet — catalog stub", style, def.Label)
+	}
+	return genre, style, def, nil
+}
