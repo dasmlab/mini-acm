@@ -78,6 +78,14 @@
       :catalog="catalog"
       @created="load"
     />
+
+    <DeployAssemblyDialog
+      v-model="deployOpen"
+      :mockup-id="deployTarget?.metadata?.id || ''"
+      :mockup-name="deployTarget?.metadata?.name || ''"
+      :initial-job="deployJob"
+      @finished="onDeployFinished"
+    />
   </q-page>
 </template>
 
@@ -88,6 +96,7 @@ import {
   listMockups, deleteMockup, deriveMockup, validateMockup, deployMockup, getCatalog,
 } from 'src/services/api'
 import CreateMockUpDialog from 'src/components/CreateMockUpDialog.vue'
+import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 
 const mockups = ref([])
 const catalog = ref({ genres: [], styles: [] })
@@ -97,6 +106,9 @@ const createOpen = ref(false)
 const deriveBusy = ref('')
 const validateBusy = ref('')
 const deployBusy = ref('')
+const deployOpen = ref(false)
+const deployTarget = ref(null)
+const deployJob = ref(null)
 
 function isACMMultiCluster(m) {
   return !m.spec?.style || m.spec.style === 'acm-multi-cluster'
@@ -193,14 +205,17 @@ async function doValidate(m) {
 
 async function doDeploy(m) {
   deployBusy.value = m.metadata.id
+  deployTarget.value = m
+  deployJob.value = null
   try {
     const res = await deployMockup(m.metadata.id)
-    Notify.create({
-      type: 'positive',
-      message: res.message || 'Deployed.',
-      timeout: 7000,
-    })
-    await load()
+    deployJob.value = res.job
+    deployOpen.value = true
+    if (res.mockup) {
+      // optimistic phase bump
+      const idx = mockups.value.findIndex((x) => x.metadata.id === m.metadata.id)
+      if (idx >= 0) mockups.value[idx] = res.mockup
+    }
   } catch (e) {
     const data = e.response?.data
     const msg = typeof data === 'string' ? data : (data?.error || data?.message || e.message)
@@ -209,6 +224,10 @@ async function doDeploy(m) {
   } finally {
     deployBusy.value = ''
   }
+}
+
+async function onDeployFinished() {
+  await load()
 }
 
 function doDelete(m) {

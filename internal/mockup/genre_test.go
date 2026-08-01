@@ -26,8 +26,19 @@ func TestCatalogHasACMStyle(t *testing.T) {
 	if cdn == nil || cdn.Available {
 		t.Fatal("surfing-cdn-r2 should exist as unavailable stub")
 	}
-	if cdn.Genre != GenreContentDelivery {
+	if cdn.Genre != GenreContentManagement {
 		t.Fatalf("cdn genre: %s", cdn.Genre)
+	}
+	personal := LookupStyle(StyleSelfServePersonalCDN)
+	if personal == nil || personal.Available {
+		t.Fatal("self-serve-cloud-personal-cdn should exist as unavailable stub")
+	}
+	wantTypes := map[string]bool{"CustomerPortal": true, "IdentitySSO": true, "KeyVault": true, "WebHost": true, "SiteCDN": true}
+	for _, ot := range personal.ObjectTypes {
+		delete(wantTypes, ot)
+	}
+	if len(wantTypes) > 0 {
+		t.Fatalf("personal CDN missing object types: %v", wantTypes)
 	}
 }
 

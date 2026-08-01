@@ -106,6 +106,11 @@ export async function deployMockup(id) {
   return data
 }
 
+export async function getDeployStatus(id) {
+  const { data } = await api.get(`/mockups/${id}/deploy`, { timeout: 30_000 })
+  return data
+}
+
 export async function listInventory() {
   const { data } = await api.get('/inventory')
   return data

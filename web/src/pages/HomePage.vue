@@ -145,6 +145,7 @@ const iconFor = (styleId) => {
     'web-full-stack': 'language',
     'infra-node-network-payload': 'lan',
     'surfing-cdn-r2': 'cloud',
+    'self-serve-cloud-personal-cdn': 'cloud_done',
     'cdn-mgr-realm': 'domain',
   }
   return map[styleId] || 'category'

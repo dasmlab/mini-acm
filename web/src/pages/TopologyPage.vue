@@ -328,6 +328,14 @@
         </q-card-actions>
       </q-card>
     </q-dialog>
+
+    <DeployAssemblyDialog
+      v-model="deployOpen"
+      :mockup-id="id"
+      :mockup-name="mockup?.metadata?.name || ''"
+      :initial-job="deployJob"
+      @finished="onDeployFinished"
+    />
   </q-page>
 </template>
 
@@ -336,6 +344,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Dialog, Notify } from 'quasar'
 import TopologyCanvas from 'src/components/TopologyCanvas.vue'
 import NodeEditDialog from 'src/components/NodeEditDialog.vue'
+import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 import {
   getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, imageSetName,
 } from 'src/services/api'
@@ -350,6 +359,8 @@ const saving = ref(false)
 const deriving = ref(false)
 const validating = ref(false)
 const deploying = ref(false)
+const deployOpen = ref(false)
+const deployJob = ref(null)
 const validateOpen = ref(false)
 const validateResult = ref(null)
 const selected = ref(null)
@@ -869,11 +880,13 @@ async function onValidate() {
 
 async function onDeploy() {
   deploying.value = true
+  deployJob.value = null
   try {
     await persistQuiet()
     const res = await deployMockup(props.id)
     if (res.mockup) mockup.value = res.mockup
-    Notify.create({ type: 'positive', message: res.message || 'Deployed.', timeout: 7000 })
+    deployJob.value = res.job
+    deployOpen.value = true
   } catch (e) {
     const data = e.response?.data
     const msg = typeof data === 'string' ? data : (data?.error || e.message)
@@ -881,6 +894,15 @@ async function onDeploy() {
     if (data?.mockup) mockup.value = data.mockup
   } finally {
     deploying.value = false
+  }
+}
+
+async function onDeployFinished(data) {
+  if (data?.mockup) mockup.value = data.mockup
+  else {
+    try {
+      mockup.value = await getMockup(props.id)
+    } catch { /* ignore */ }
   }
 }
 

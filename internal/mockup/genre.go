@@ -8,14 +8,17 @@ const (
 	GenreClusterManagement       = "cluster-management"
 	GenreApplicationDevelopment  = "application-development"
 	GenreInfrastructure          = "infrastructure"
-	GenreContentDelivery         = "content-delivery"
+	GenreContentManagement       = "content-management"
+	// GenreContentDelivery is a legacy alias id kept for existing mockups / docs.
+	GenreContentDelivery = GenreContentManagement
 
 	StyleACMMultiCluster = "acm-multi-cluster"
 	StyleSingleSNOOCP        = "single-sno-ocp"
 	StyleWindowsUI           = "windows-ui"
 	StyleWebFullStack        = "web-full-stack"
 	StyleInfraNodeNetwork    = "infra-node-network-payload"
-	StyleSurfingCdnR2        = "surfing-cdn-r2"
+	StyleSelfServePersonalCDN = "self-serve-cloud-personal-cdn"
+	StyleSurfingCdnR2         = "surfing-cdn-r2" // golden implementation example of Self-Serve Personal CDN
 )
 
 // RelationRule constrains how object types may connect (validate / palette later).
@@ -147,24 +150,57 @@ func Catalog() CatalogResponse {
 			},
 		},
 		{
-			ID: StyleSurfingCdnR2, Genre: GenreContentDelivery,
-			Label: "Surfing CDN · R2 + Cloudflare",
-			Description: "Mock a CDN network: DC Bound origin house (thin up / Surfing API) → Cloudflare edge → optional R2 object store + DAM. Profile cost to cheapcloud ($20/mo storage+CDN envelope). Production twin: dasmlab_home surfing-service.",
+			ID: StyleSelfServePersonalCDN, Genre: GenreContentManagement,
+			Label: "Self-Serve Cloud Personal CDN",
+			Description: "Customer-held keys + pass-through cloud bill (~$1 service for index/site-CDN/migrate). Portal → OAuth2/SSO to CF/Azure/GCP → BYO bucket backend → Edge CDN → catalog/index (cdn-mgr). Surfing is the golden live example. cheapcloud profiles free-tier burn; mock-me templates this for cdn-mgr later.",
 			Available: false,
 			ObjectTypes: []string{
-				"SourceHouse", "OriginApp", "EdgeCDN", "ObjectStore", "DAM", "MediaRoute", "CostProfile",
+				"CustomerPortal", "IdentitySSO", "KeyVault", "Realm", "Backend",
+				"ObjectStore", "EdgeCDN", "SiteCDN", "WebHost", "CatalogIndex",
+				"Collection", "Asset", "CostProfile", "PublishPipeline",
 			},
-			Views:       []string{"all", "origin", "edge", "storage", "cost"},
-			DefaultSeed: "stub — Bound origin → CF CDN → optional R2 (not seeded yet)",
+			Views: []string{"all", "portal", "identity", "storage", "edge", "hosting", "cost"},
+			DefaultSeed: "stub — portal+SSO → BYO R2 → CF edge → index; web host on DC OCP",
 			Relations: []RelationRule{
-				{From: "OriginApp", Rel: "runsOn", To: "SourceHouse", Cardinality: "1..1", Notes: "OCP Surfing / thin-up in Bound DC"},
-				{From: "OriginApp", Rel: "publishesTo", To: "ObjectStore", Cardinality: "0..1", Notes: "optional cloud origin for bytes"},
-				{From: "EdgeCDN", Rel: "pullsFrom", To: "ObjectStore", Cardinality: "0..1"},
-				{From: "EdgeCDN", Rel: "pullsFrom", To: "OriginApp", Cardinality: "0..1", Notes: "pull-through when no object store"},
-				{From: "MediaRoute", Rel: "terminatesAt", To: "EdgeCDN", Cardinality: "1..1"},
-				{From: "DAM", Rel: "indexes", To: "ObjectStore", Cardinality: "0..1"},
-				{From: "CostProfile", Rel: "constrains", To: "ObjectStore", Cardinality: "0..1", Notes: "cheapcloud MediaBroker envelope"},
+				{From: "CustomerPortal", Rel: "authenticatesVia", To: "IdentitySSO", Cardinality: "1..1", Notes: "OAuth2 / OIDC to CF, Azure, Google"},
+				{From: "IdentitySSO", Rel: "grants", To: "KeyVault", Cardinality: "1..1", Notes: "user holds keys; we store refs only"},
+				{From: "Realm", Rel: "ownedBy", To: "CustomerPortal", Cardinality: "1..1"},
+				{From: "Backend", Rel: "boundTo", To: "Realm", Cardinality: "1..*"},
+				{From: "Backend", Rel: "usesKeysFrom", To: "KeyVault", Cardinality: "1..1"},
+				{From: "ObjectStore", Rel: "implements", To: "Backend", Cardinality: "1..1", Notes: "R2 / Azure Blob / GCS / Glacier adapter"},
+				{From: "EdgeCDN", Rel: "pullsFrom", To: "ObjectStore", Cardinality: "1..1"},
+				{From: "SiteCDN", Rel: "terminatesAt", To: "EdgeCDN", Cardinality: "1..1"},
+				{From: "WebHost", Rel: "serves", To: "CustomerPortal", Cardinality: "0..1", Notes: "gallery UX — Surfing on OCP DC today"},
+				{From: "WebHost", Rel: "runsOn", To: "ObjectStore", Cardinality: "0..0", Notes: "bytes are NOT on webhost — CDN/origin only"},
+				{From: "CatalogIndex", Rel: "indexes", To: "Collection", Cardinality: "1..*"},
+				{From: "Collection", Rel: "contains", To: "Asset", Cardinality: "0..*"},
+				{From: "PublishPipeline", Rel: "publishes", To: "Asset", Cardinality: "0..*"},
+				{From: "PublishPipeline", Rel: "writesTo", To: "ObjectStore", Cardinality: "1..1"},
+				{From: "CostProfile", Rel: "constrains", To: "ObjectStore", Cardinality: "0..1", Notes: "cheapcloud free-tier / $ envelope"},
 				{From: "CostProfile", Rel: "constrains", To: "EdgeCDN", Cardinality: "0..1"},
+			},
+		},
+		{
+			ID: StyleSurfingCdnR2, Genre: GenreContentManagement,
+			Label: "Surfing (golden Personal CDN example)",
+			Description: "Live implementation slice of Self-Serve Cloud Personal CDN: dasmlab_home Surfing UX (WebHost on 2026-prod-1) → surfing-service publish → R2 dasmlab-surfing → CF pub-*.r2.dev. Keep as before/after golden client while dasmlab-cdn-mgr grows.",
+			Available: false,
+			ObjectTypes: []string{
+				"WebHost", "OriginApp", "ObjectStore", "EdgeCDN", "SiteCDN",
+				"Collection", "Asset", "PublishPipeline", "CostProfile", "KeyVault",
+			},
+			Views:       []string{"all", "hosting", "storage", "edge", "cost"},
+			DefaultSeed: "stub — Surfing on OCP + R2 + CF (mirrors production)",
+			Relations: []RelationRule{
+				{From: "OriginApp", Rel: "runsBeside", To: "WebHost", Cardinality: "1..1", Notes: "surfing-service API + dasmlab_home SPA"},
+				{From: "PublishPipeline", Rel: "runsOn", To: "OriginApp", Cardinality: "1..1"},
+				{From: "PublishPipeline", Rel: "writesTo", To: "ObjectStore", Cardinality: "1..1"},
+				{From: "ObjectStore", Rel: "usesKeysFrom", To: "KeyVault", Cardinality: "1..1", Notes: "R2 S3 API token today; SSO later"},
+				{From: "EdgeCDN", Rel: "pullsFrom", To: "ObjectStore", Cardinality: "1..1"},
+				{From: "SiteCDN", Rel: "terminatesAt", To: "EdgeCDN", Cardinality: "1..1"},
+				{From: "WebHost", Rel: "linksTo", To: "SiteCDN", Cardinality: "1..1", Notes: "browser loads media from CDN URLs directly"},
+				{From: "Collection", Rel: "contains", To: "Asset", Cardinality: "0..*"},
+				{From: "CostProfile", Rel: "constrains", To: "ObjectStore", Cardinality: "0..1"},
 			},
 		},
 	}
@@ -186,9 +222,9 @@ func Catalog() CatalogResponse {
 			Styles: []string{StyleInfraNodeNetwork},
 		},
 		{
-			ID: GenreContentDelivery, Label: "Content Delivery",
-			Description: "CDN / origin / object-store MockUps (Surfing pattern). Profile into cheapcloud for cheapest live path under budget.",
-			Styles: []string{StyleSurfingCdnR2},
+			ID: GenreContentManagement, Label: "Content Management",
+			Description: "Self-serve personal CDN / media realms (cdn-mgr). Golden example: Surfing. Portal+SSO+BYO keys; cheapcloud watches free-tier; mock-me templates for cdn-mgr customers (~$1 index fee, pass-through cloud bill).",
+			Styles: []string{StyleSelfServePersonalCDN, StyleSurfingCdnR2},
 		},
 	}
 

@@ -4,7 +4,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/dasmlab/mock-me/internal/auth"
+	"github.com/dasmlab/mock-me/internal/deploy"
 	"github.com/dasmlab/mock-me/internal/inventory"
 	"github.com/dasmlab/mock-me/internal/mockup"
 )
@@ -21,6 +21,7 @@ import (
 type Server struct {
 	store     *mockup.Store
 	inventory *inventory.Store
+	deploy    *deploy.Engine
 	auth      *auth.Service
 	dataDir   string
 	buildVer  string
@@ -32,7 +33,10 @@ func New(store *mockup.Store, inv *inventory.Store, authSvc *auth.Service, dataD
 	if authSvc == nil {
 		authSvc, _ = auth.New(context.Background(), auth.Config{})
 	}
-	s := &Server{store: store, inventory: inv, auth: authSvc, dataDir: dataDir, buildVer: buildVer, static: static}
+	s := &Server{
+		store: store, inventory: inv, deploy: deploy.NewEngine(store, inv),
+		auth: authSvc, dataDir: dataDir, buildVer: buildVer, static: static,
+	}
 	s.router = s.routes()
 	return s
 }
@@ -89,6 +93,7 @@ func (s *Server) routes() chi.Router {
 			r.Post("/mockups/{id}/derive", s.derive)
 			r.Post("/mockups/{id}/validate", s.validateMockup)
 			r.Post("/mockups/{id}/deploy", s.deployMockup)
+			r.Get("/mockups/{id}/deploy", s.getDeploy)
 			r.Delete("/mockups/{id}", s.deleteMockup)
 
 			r.Get("/inventory", s.listInventory)
@@ -338,29 +343,35 @@ func (s *Server) deployMockup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	m, err = s.store.SetPhase(id, mockup.PhaseDeploying,
-		fmt.Sprintf("Deploying plan against inventory host %s (%s)…", host.Name, host.Endpoint()))
+	job, err := s.deploy.Start(id, host.ID, host.Name, host.Endpoint())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-
-	// MVP click-through: accept the plan once a ready MACHINE-HOST is linked.
-	// Full VM / ACM bring-up remains Wizard CLI / future Ansible EE.
-	msg := fmt.Sprintf(
-		"Deployed plan against %s (%s) — libvirt ready. Next: fill pull-secret/SSH gaps, then `mock-me --manual hub create` (or future Ansible EE job).",
-		host.Name, host.Endpoint(),
-	)
-	m, err = s.store.SetPhase(id, mockup.PhaseDeployed, msg)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	m, _ = s.store.Get(id)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"job":       job,
 		"mockup":    m,
 		"inventory": host,
-		"message":   msg,
-		"mode":      "plan-accept",
+		"message":   "Assembly line started — poll GET /mockups/{id}/deploy for stage progress",
+	})
+}
+
+func (s *Server) getDeploy(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	job, err := s.deploy.GetJob(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if job == nil {
+		http.Error(w, "no deploy job", http.StatusNotFound)
+		return
+	}
+	m, _ := s.store.Get(id)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"job":    job,
+		"mockup": m,
 	})
 }
 

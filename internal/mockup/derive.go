@@ -46,8 +46,11 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 		paths[fmt.Sprintf("cluster-%d", i)] = p
 	}
 
-	m.Status.Phase = PhaseConfigured
 	m.Status.Message = "Derived hub/cluster YAML under out/"
+	// Don't demote an in-flight deploy / later phases.
+	if PhaseRank(m.Status.Phase) < PhaseRank(PhaseConfigured) {
+		m.Status.Phase = PhaseConfigured
+	}
 	_ = s.Save(m)
 	return paths, nil
 }
