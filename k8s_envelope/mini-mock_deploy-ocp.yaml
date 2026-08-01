@@ -134,7 +134,7 @@ spec:
         - name: inventory-ssh
           secret:
             secretName: mini-mock-ssh
-            defaultMode: 0400
+            defaultMode: 0440
             optional: true
 
 ---
