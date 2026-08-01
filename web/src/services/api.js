@@ -19,7 +19,15 @@ export async function getAuthConfig() {
 }
 
 export async function getMe() {
-  const { data } = await api.get('/auth/me')
+  const { data } = await api.get('/auth/me', {
+    // Unauthenticated is normal before login — avoid noisy console 401s.
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 401,
+  })
+  if (!data || data.error === 'unauthorized') {
+    const err = new Error('unauthorized')
+    err.response = { status: 401, data }
+    throw err
+  }
   return data
 }
 
