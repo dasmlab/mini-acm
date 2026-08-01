@@ -4,10 +4,21 @@ import "fmt"
 
 // ValidationIssue is one topology problem (free-form teaching validate collects many).
 type ValidationIssue struct {
-	Code    string `json:"code"`
+	Code     string `json:"code"`
 	Severity string `json:"severity"` // error | warn
-	Object  string `json:"object,omitempty"`
-	Message string `json:"message"`
+	Object   string `json:"object,omitempty"`
+	Message  string `json:"message"`
+}
+
+// ValidationStep is one station in the validate walk (object + relational neighbours).
+type ValidationStep struct {
+	ID      string   `json:"id"`
+	Kind    string   `json:"kind"` // MachineHost | Adapter | VHost | …
+	Name    string   `json:"name"`
+	Icon    string   `json:"icon"`
+	Relates []string `json:"relates,omitempty"` // human relation edges checked
+	Status  string   `json:"status"`           // ok | warn | error
+	Issue   string   `json:"issue,omitempty"`
 }
 
 // ValidationResult is the full pass over a MockUp topology.
@@ -15,6 +26,7 @@ type ValidationResult struct {
 	OK       bool              `json:"ok"`
 	Mode     string            `json:"mode"`
 	Issues   []ValidationIssue `json:"issues"`
+	Steps    []ValidationStep  `json:"steps,omitempty"`
 	Summary  string            `json:"summary"`
 	// PromoteSupported is always false for now — free-form → guided is a later feature.
 	PromoteSupported bool `json:"promoteSupported"`
@@ -223,6 +235,7 @@ func ValidateTopology(m *MockUp) ValidationResult {
 	} else {
 		res.Summary = fmt.Sprintf("%d error(s), %d warning(s) — fix errors before calling this a real MockUp.", errs, warns)
 	}
+	res.Steps = BuildValidateWalk(m, res.Issues)
 	return res
 }
 
@@ -231,4 +244,207 @@ func labelOf(o CanvasNode) string {
 		return o.Label
 	}
 	return o.ID
+}
+
+// BuildValidateWalk produces a dynamic checklist of objects + relational neighbours
+// for the UI assembly-style validate animation.
+func BuildValidateWalk(m *MockUp, issues []ValidationIssue) []ValidationStep {
+	issueFor := func(id string) (sev, msg string) {
+		sev = "ok"
+		for _, iss := range issues {
+			if iss.Object != "" && iss.Object != id {
+				continue
+			}
+			// Prefer object-scoped; also match unlabeled style issues onto related kinds loosely.
+			if iss.Object == id || iss.Object == "" {
+				if iss.Severity == "error" {
+					return "error", iss.Message
+				}
+				if sev != "error" {
+					sev, msg = "warn", iss.Message
+				}
+			}
+		}
+		return sev, msg
+	}
+	// Tighter: only attach issues that name this object id.
+	issueForID := func(id string) (sev, msg string) {
+		sev = "ok"
+		for _, iss := range issues {
+			if iss.Object != id {
+				continue
+			}
+			if iss.Severity == "error" {
+				return "error", iss.Message
+			}
+			sev, msg = "warn", iss.Message
+		}
+		return sev, msg
+	}
+	_ = issueFor
+
+	var steps []ValidationStep
+	add := func(id, kind, name, icon string, relates []string) {
+		sev, msg := issueForID(id)
+		steps = append(steps, ValidationStep{
+			ID: id, Kind: kind, Name: name, Icon: icon, Relates: relates, Status: sev, Issue: msg,
+		})
+	}
+
+	hasHost := m.EffectiveHost()
+	hasGW := m.EffectiveGateway()
+	hasHub := m.EffectiveHub()
+	hasACM := m.EffectiveACM()
+	style := m.Spec.Style
+	if style == "" {
+		style = StyleACMMultiCluster
+	}
+
+	if hasHost {
+		h := m.Spec.InfraHost
+		name := h.Label
+		if name == "" {
+			name = h.Hostname
+		}
+		if name == "" {
+			name = "MACHINE-HOST"
+		}
+		add(h.ID, "MachineHost", name, "dns", []string{"Adapter runsOn → MachineHost"})
+		add("adapter-libvirt", "Adapter", "ADAPTER (libvirt)", "settings_ethernet", []string{
+			"Adapter runsOn → " + name,
+			"VHost hostedBy → Adapter",
+		})
+	} else {
+		// Still show a missing-host step so the walk explains the gap.
+		sev, msg := "warn", "No MACHINE-HOST in the picture"
+		for _, iss := range issues {
+			if iss.Code == "missing-host" {
+				sev, msg = iss.Severity, iss.Message
+				if sev == "error" {
+					sev = "error"
+				} else {
+					sev = "warn"
+				}
+				break
+			}
+		}
+		steps = append(steps, ValidationStep{
+			ID: "missing-host", Kind: "MachineHost", Name: "(missing)", Icon: "dns",
+			Relates: []string{"Adapter would runOn → MachineHost"}, Status: sev, Issue: msg,
+		})
+	}
+
+	if hasGW {
+		g := m.Spec.Gateway
+		name := g.Label
+		if name == "" {
+			name = g.Hostname
+		}
+		add("vhost-gw", "VHost", "vHost-GW", "crop_square", []string{
+			"VHost hostedBy → Adapter",
+			"Gateway runsOn → vHost-GW",
+		})
+		add(g.ID, "Gateway", name, "router", []string{
+			"Gateway runsOn → vHost-GW",
+			"LAN guests ↔ VyOS edge",
+		})
+	}
+
+	if hasHub {
+		h := m.Spec.Hub
+		name := h.Label
+		if name == "" {
+			name = h.Hostname
+		}
+		add("vhost-hub-0", "VHost", "vHost-MGMT", "crop_square", []string{
+			"OCP-MGMT runsOn → vHost-MGMT",
+		})
+		add(h.ID, "OCP-MGMT", name, "memory", []string{
+			"OCP-MGMT runsOn → vHost-MGMT",
+			"ACM runsOn → OCP-MGMT",
+		})
+	}
+
+	if hasACM {
+		a := m.Spec.ACM
+		name := a.Label
+		if name == "" {
+			name = "ACM"
+		}
+		rels := []string{"ACM runsOn → OCP-MGMT"}
+		if style == StyleACMMultiCluster {
+			rels = append(rels, "OCP-DEPLOY managedBy → ACM")
+		}
+		add(a.ID, "ACM", name, "extension", rels)
+	}
+
+	for _, c := range m.Spec.Clusters {
+		n := c.Count
+		if n < 1 {
+			n = 3
+		}
+		name := c.Label
+		if name == "" {
+			name = c.Name
+		}
+		for i := 0; i < n; i++ {
+			vid := fmt.Sprintf("vhost-%s-%d", c.ID, i)
+			add(vid, "VHost", fmt.Sprintf("vHost-%s-%d", c.Name, i), "crop_square", []string{
+				fmt.Sprintf("OCP-DEPLOY %s runsOn → %s", name, vid),
+			})
+		}
+		add(c.ID, "OCP-DEPLOY", name, "developer_board", []string{
+			fmt.Sprintf("%s runsOn → VHost×%d", name, n),
+			fmt.Sprintf("%s managedBy → ACM", name),
+		})
+	}
+
+	if m.Spec.Canvas != nil {
+		for _, o := range m.Spec.Canvas.Orphans {
+			kind := o.Kind
+			icon := "help_outline"
+			rels := []string{}
+			if o.Kind == "vhost" {
+				kind = "VHost"
+				icon = "crop_square"
+				rels = []string{"orphan VHost must host a payload (appliance/cluster)"}
+			} else if o.Kind == "appliance" {
+				kind = "Appliance"
+				icon = "electrical_services"
+				if o.RunsOn != "" {
+					rels = append(rels, fmt.Sprintf("%s runsOn → %s", labelOf(o), o.RunsOn))
+				} else {
+					rels = append(rels, "appliance must runOn → VHost")
+				}
+			}
+			add(o.ID, kind, labelOf(o), icon, rels)
+		}
+	}
+
+	// Plan-level gap steps (no object id) — append once if present in issues.
+	for _, iss := range issues {
+		if iss.Object != "" {
+			continue
+		}
+		if iss.Code == "gap-pull-secret" || iss.Code == "gap-ssh-key" || iss.Code == "gap-discovery-iso" ||
+			iss.Code == "sno-needs-mgmt" || iss.Code == "sno-unexpected-acm" || iss.Code == "sno-unexpected-deploy" ||
+			iss.Code == "deployments-need-mgmt" || iss.Code == "deployments-need-acm" || iss.Code == "acm-needs-spoke" {
+			sev := "warn"
+			if iss.Severity == "error" {
+				sev = "error"
+			}
+			steps = append(steps, ValidationStep{
+				ID: "rule-" + iss.Code, Kind: "Relation", Name: iss.Code,
+				Icon: "hub", Relates: []string{iss.Message}, Status: sev, Issue: iss.Message,
+			})
+		}
+	}
+
+	if len(steps) == 0 {
+		steps = append(steps, ValidationStep{
+			ID: "empty", Kind: "Canvas", Name: "(empty rack)", Icon: "blur_on",
+			Status: "warn", Issue: "Nothing to walk — add objects or use defaults",
+		})
+	}
+	return steps
 }

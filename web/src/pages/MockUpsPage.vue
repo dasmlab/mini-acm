@@ -86,6 +86,13 @@
       :initial-job="deployJob"
       @finished="onDeployFinished"
     />
+
+    <ValidateWalkDialog
+      v-model="validateOpen"
+      :title="validateTarget?.metadata?.name || 'MockUp'"
+      :result="validateResult"
+      @closed="load"
+    />
   </q-page>
 </template>
 
@@ -97,6 +104,7 @@ import {
 } from 'src/services/api'
 import CreateMockUpDialog from 'src/components/CreateMockUpDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
+import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 
 const mockups = ref([])
 const catalog = ref({ genres: [], styles: [] })
@@ -109,6 +117,9 @@ const deployBusy = ref('')
 const deployOpen = ref(false)
 const deployTarget = ref(null)
 const deployJob = ref(null)
+const validateOpen = ref(false)
+const validateTarget = ref(null)
+const validateResult = ref(null)
 
 function isACMMultiCluster(m) {
   return !m.spec?.style || m.spec.style === 'acm-multi-cluster'
@@ -188,14 +199,12 @@ async function doDerive(m) {
 
 async function doValidate(m) {
   validateBusy.value = m.metadata.id
+  validateTarget.value = m
+  validateResult.value = null
   try {
     const res = await validateMockup(m.metadata.id)
-    if (res.ok) {
-      Notify.create({ type: 'positive', message: res.summary || 'Validated.' })
-    } else {
-      Notify.create({ type: 'warning', message: res.summary || 'Validation failed.' })
-    }
-    await load()
+    validateResult.value = res
+    validateOpen.value = true
   } catch (e) {
     Notify.create({ type: 'negative', message: e.response?.data || e.message })
   } finally {

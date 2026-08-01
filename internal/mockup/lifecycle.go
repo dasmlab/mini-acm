@@ -69,6 +69,7 @@ func (s *Store) ValidatePlan(id string) (ValidationResult, *MockUp, error) {
 	} else {
 		res.Summary = fmt.Sprintf("%d error(s), %d warning(s) — fix before deploy.", errs, warns)
 	}
+	res.Steps = BuildValidateWalk(m, res.Issues)
 
 	if res.OK {
 		if PhaseRank(m.Status.Phase) < PhaseRank(PhaseValidated) {

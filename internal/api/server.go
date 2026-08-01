@@ -297,6 +297,7 @@ func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
 		"ok":               res.OK,
 		"mode":             res.Mode,
 		"issues":           res.Issues,
+		"steps":            res.Steps,
 		"summary":          res.Summary,
 		"promoteSupported": res.PromoteSupported,
 		"mockup":           m,

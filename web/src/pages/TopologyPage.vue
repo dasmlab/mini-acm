@@ -306,35 +306,18 @@
       @save="onSaveNode"
     />
 
-    <q-dialog v-model="validateOpen">
-      <q-card style="min-width: 480px; max-width: 640px">
-        <q-card-section>
-          <div class="text-h6">{{ validateResult?.ok ? 'Validate OK' : 'Validate found issues' }}</div>
-          <div class="text-caption text-grey-7">{{ validateResult?.summary }}</div>
-        </q-card-section>
-        <q-card-section class="q-pt-none" style="max-height: 360px; overflow: auto">
-          <div v-for="(iss, i) in (validateResult?.issues || [])" :key="i" class="q-mb-sm">
-            <q-badge :color="iss.severity === 'error' ? 'negative' : 'warning'" :label="iss.severity" class="q-mr-sm" />
-            <span class="text-body2">{{ iss.message }}</span>
-          </div>
-          <div v-if="!(validateResult?.issues || []).length" class="text-body2 text-positive">
-            No issues — minimum ACM lab picture looks complete.
-          </div>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn flat disable label="Promote to Guided" />
-          <q-tooltip>TODO later — free-form → constrained promote is not supported; rebuild in Guided.</q-tooltip>
-          <q-btn flat label="Close" color="primary" v-close-popup />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
-
     <DeployAssemblyDialog
       v-model="deployOpen"
       :mockup-id="id"
       :mockup-name="mockup?.metadata?.name || ''"
       :initial-job="deployJob"
       @finished="onDeployFinished"
+    />
+
+    <ValidateWalkDialog
+      v-model="validateOpen"
+      :title="mockup?.metadata?.name || 'Topology'"
+      :result="validateResult"
     />
   </q-page>
 </template>
@@ -345,6 +328,7 @@ import { Dialog, Notify } from 'quasar'
 import TopologyCanvas from 'src/components/TopologyCanvas.vue'
 import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
+import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 import {
   getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, imageSetName,
 } from 'src/services/api'
@@ -855,6 +839,7 @@ function onRemoveOrphan(id) {
 
 async function onValidate() {
   validating.value = true
+  validateResult.value = null
   try {
     await persistQuiet()
     // Free-form: topology teaching check on in-memory canvas.
@@ -866,11 +851,6 @@ async function onValidate() {
       if (validateResult.value.mockup) mockup.value = validateResult.value.mockup
     }
     validateOpen.value = true
-    if (validateResult.value.ok) {
-      Notify.create({ type: 'positive', message: validateResult.value.summary })
-    } else {
-      Notify.create({ type: 'warning', message: validateResult.value.summary })
-    }
   } catch (e) {
     Notify.create({ type: 'negative', message: e.response?.data || e.message })
   } finally {
