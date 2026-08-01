@@ -155,14 +155,23 @@ func probeHost(h *MachineHost) *ProbeResult {
 		}
 	}
 	virshOK := false
-	if out, err := run("command -v virsh >/dev/null && virsh list --name 2>/dev/null | wc -l || echo missing"); err == nil {
+	if out, err := run(`if command -v virsh >/dev/null 2>&1; then virsh list --name 2>/dev/null | wc -l; else echo missing; fi`); err == nil {
+		out = strings.TrimSpace(out)
 		res.Facts["virsh"] = out
-		if out != "missing" && !strings.Contains(out, "missing") {
+		if out != "" && out != "missing" && !strings.Contains(out, "missing") {
 			virshOK = true
 		}
 	}
 	if out, err := run("test -S /var/run/libvirt/libvirt-sock && echo yes || echo no"); err == nil {
-		res.Facts["libvirtSocket"] = out
+		res.Facts["libvirtSocket"] = strings.TrimSpace(out)
+	}
+
+	// RHEL 10 may expose modular virt* units; treat any active libvirt daemon as OK.
+	if !libvirtActive {
+		if out, err := run(`systemctl is-active virtqemud 2>/dev/null || true`); err == nil && strings.TrimSpace(out) == "active" {
+			libvirtActive = true
+			res.Facts["libvirtd"] = "virtqemud:" + strings.TrimSpace(out)
+		}
 	}
 
 	podmanOK := false

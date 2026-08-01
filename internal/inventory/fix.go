@@ -121,25 +121,55 @@ func runFixAction(client *ssh.Client, action, sudoPassword string) ([]string, er
 	case FixInstallLibvirt:
 		return sudoScript(client, sudoPassword, `
 set -e
-dnf install -y libvirt libvirt-client libvirt-daemon-kvm qemu-kvm virt-install
-systemctl enable --now libvirtd || systemctl enable --now libvirt
+# Lab hosts sometimes hit RH GPG key lag after fresh registration — try normal, then nogpgcheck.
+if ! dnf install -y libvirt libvirt-client libvirt-daemon-kvm qemu-kvm virt-install; then
+  echo "dnf GPG/normal install failed — retrying with --nogpgcheck (lab)"
+  dnf install -y --nogpgcheck libvirt libvirt-client libvirt-daemon-kvm qemu-kvm virt-install
+fi
+systemctl enable --now libvirtd 2>/dev/null || systemctl enable --now virtqemud 2>/dev/null || systemctl enable --now libvirt
 # common lab: allow user libvirt group if present
 if getent group libvirt >/dev/null 2>&1; then
-  usermod -aG libvirt "$(logname 2>/dev/null || echo "$USER")" 2>/dev/null || true
+  usermod -aG libvirt "$(logname 2>/dev/null || echo "${SUDO_USER:-$USER}")" 2>/dev/null || true
 fi
-systemctl is-active libvirtd || systemctl is-active libvirt
+# firewall: libvirt API + guest display ports (lab)
+if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-service=libvirt || true
+  firewall-cmd --permanent --add-port=16509/tcp || true
+  firewall-cmd --permanent --add-port=5900-5920/tcp || true
+  firewall-cmd --permanent --zone=trusted --add-interface=virbr0 || true
+  firewall-cmd --reload || true
+fi
+systemctl is-active libvirtd || systemctl is-active virtqemud || systemctl is-active libvirt
 command -v virsh
+virsh version | head -5
 `, "install-libvirt")
 	case FixStartLibvirtd:
 		return sudoScript(client, sudoPassword, `
 set -e
-systemctl enable --now libvirtd || systemctl enable --now libvirt
-systemctl is-active libvirtd || systemctl is-active libvirt
+# If unit missing, packages were never installed — install then start.
+if ! systemctl list-unit-files libvirtd.service 2>/dev/null | grep -q libvirtd.service \
+   && ! systemctl list-unit-files virtqemud.service 2>/dev/null | grep -q virtqemud.service; then
+  echo "libvirtd unit missing — installing libvirt stack first"
+  if ! dnf install -y libvirt libvirt-client libvirt-daemon-kvm qemu-kvm virt-install; then
+    echo "dnf GPG/normal install failed — retrying with --nogpgcheck (lab)"
+    dnf install -y --nogpgcheck libvirt libvirt-client libvirt-daemon-kvm qemu-kvm virt-install
+  fi
+fi
+systemctl enable --now libvirtd 2>/dev/null || systemctl enable --now virtqemud 2>/dev/null || systemctl enable --now libvirt
+systemctl is-active libvirtd || systemctl is-active virtqemud || systemctl is-active libvirt
+if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-service=libvirt || true
+  firewall-cmd --permanent --add-port=16509/tcp || true
+  firewall-cmd --reload || true
+fi
 `, "start-libvirtd")
 	case FixInstallPodman:
 		return sudoScript(client, sudoPassword, `
 set -e
-dnf install -y podman
+if ! dnf install -y podman; then
+  echo "dnf GPG/normal install failed — retrying with --nogpgcheck (lab)"
+  dnf install -y --nogpgcheck podman
+fi
 command -v podman
 podman --version
 # EE / runner agent image pull is deferred (MINI_MOCK_AGENT_IMAGE later)
@@ -161,6 +191,7 @@ func sudoScript(client *ssh.Client, sudoPassword, script, label string) ([]strin
 	session.Stderr = &buf
 
 	// Feed sudo password on stdin when provided; otherwise require passwordless sudo.
+	// Use explicit bash -lc so failures from systemctl/dnf always surface on stderr.
 	inner := "bash -s"
 	var cmd string
 	if strings.TrimSpace(sudoPassword) != "" {
@@ -184,7 +215,10 @@ func sudoScript(client *ssh.Client, sudoPassword, script, label string) ([]strin
 		if strings.TrimSpace(sudoPassword) == "" {
 			hint = " (try providing sudo password in Fix dialog, or configure passwordless sudo)"
 		}
-		return lines, fmt.Errorf("%v%s — output: %s", err, hint, truncate(out, 400))
+		if out == "" {
+			hint += " (no remote output — unit may be missing; try Fix install-libvirt)"
+		}
+		return lines, fmt.Errorf("%v%s — output: %s", err, hint, truncate(out, 800))
 	}
 	return lines, nil
 }
