@@ -54,7 +54,7 @@
 
         <q-separator class="q-my-md" />
         <div class="q-px-md q-pb-md text-caption text-grey-7">
-          Inventory hosts power orchestration. MockUp topology paints the rack; link a host to probe &amp; plan.
+          Inventory hosts power Probe/Deploy. Topology paints the rack; Wizard only collects gaps.
         </div>
       </q-list>
     </q-drawer>

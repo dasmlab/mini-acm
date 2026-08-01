@@ -1,5 +1,10 @@
 <template>
-  <div class="box-view" role="img" aria-label="Single host machine box view: RHEL, libvirt, VyOS edge, mgmt SNO with ACM, and deployment clusters">
+  <div
+    class="box-view"
+    :class="{ compact }"
+    role="img"
+    aria-label="Single host machine box view: RHEL, libvirt, VyOS edge, mgmt SNO with ACM, and deployment clusters"
+  >
     <svg viewBox="0 0 920 560" xmlns="http://www.w3.org/2000/svg" class="box-svg">
       <defs>
         <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
@@ -135,6 +140,9 @@
 </template>
 
 <script setup>
+defineProps({
+  compact: { type: Boolean, default: false },
+})
 </script>
 
 <style scoped>
@@ -144,6 +152,18 @@
   border-radius: 12px;
   background: #fff;
   overflow: hidden;
+}
+.box-view.compact {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  max-height: 230px;
+}
+.box-view.compact .box-svg {
+  max-height: 230px;
+  width: 100%;
+  transform: scale(1);
+  transform-origin: top center;
 }
 .box-svg {
   display: block;

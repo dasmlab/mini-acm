@@ -5,7 +5,7 @@
       <div class="col">
         <div class="text-h4">Wizard</div>
         <div class="text-caption text-grey-7" v-if="mockup">
-          {{ mockup.metadata.name }} — fill MVP gaps, then derive YAML for CLI
+          {{ mockup.metadata.name }} — data collector for MVP gaps (secrets, paths, channels). Topology owns the rack picture.
         </div>
       </div>
       <q-btn outline color="primary" label="Topology" :to="{ name: 'topology', params: { id } }" class="q-mr-sm" />
