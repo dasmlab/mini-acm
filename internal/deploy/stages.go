@@ -48,7 +48,7 @@ func (e *Engine) stageGenerate(j *Job) error {
 }
 
 func (e *Engine) stageEE(j *Job) error {
-	script := `set -euo pipefail
+	script := `set -eu
 echo "EE_CHECK_START"
 command -v podman >/dev/null
 podman --version
@@ -58,14 +58,14 @@ if ! podman image exists quay.io/ansible/creator-ee:latest 2>/dev/null; then
   podman pull quay.io/ansible/creator-ee:latest
 fi
 podman image exists quay.io/ansible/creator-ee:latest
-# Smoke: run a no-op container
-podman run --rm quay.io/ansible/creator-ee:latest ansible --version | head -3
+# Smoke: run a no-op container (no pipefail+head — SIGPIPE 141)
+podman run --rm quay.io/ansible/creator-ee:latest ansible --version 2>&1 | sed -n '1,5p' || true
 echo "EE_OK=1"
 `
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
 		// Soft-fail pull issues: still require podman present
-		out2, _, err2 := e.inv.RunScript(j.InventoryID, `set -euo pipefail
+		out2, _, err2 := e.inv.RunScript(j.InventoryID, `set -eu
 command -v podman
 podman --version
 echo EE_PODMAN_ONLY=1
@@ -106,7 +106,7 @@ func (e *Engine) stageVInfra(j *Job) error {
 	if gw == "" {
 		gw = "10.77.30.1"
 	}
-	script := fmt.Sprintf(`set -euo pipefail
+	script := fmt.Sprintf(`set -eu
 echo VINFRA_START
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 systemctl is-active libvirtd 2>/dev/null || sudo -n systemctl start libvirtd
@@ -121,7 +121,9 @@ if ! virsh pool-info "$POOL" >/dev/null 2>&1; then
   virsh pool-start "$POOL" || true
   virsh pool-autostart "$POOL" || true
 fi
-virsh pool-info "$POOL" | head -5
+echo "POOL_INFO<<"
+virsh pool-info "$POOL" || true
+echo ">>POOL_INFO"
 if ! virsh net-info "$NET" >/dev/null 2>&1; then
   cat > /tmp/mock-me-net.xml <<EOF
 <network>
@@ -139,7 +141,9 @@ EOF
   virsh net-start "$NET" || true
   virsh net-autostart "$NET" || true
 fi
-virsh net-info "$NET" | head -8
+echo "NET_INFO<<"
+virsh net-info "$NET" || true
+echo ">>NET_INFO"
 echo VINFRA_OK=1
 `, pool, netName, gw)
 
@@ -167,12 +171,12 @@ func (e *Engine) stageOCP(j *Job) error {
 
 	// Verify remote workspace + prepare hub work dir; kick agent create if openshift-install present.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
-	script := fmt.Sprintf(`set -euo pipefail
+	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/hub"
 test -f "$ROOT/out/hub.yaml"
 if command -v openshift-install >/dev/null 2>&1; then
-  echo "openshift-install=$(openshift-install version | head -1)"
+  echo "openshift-install=$(openshift-install version 2>&1 | sed -n '1p')"
   echo "HAS_INSTALLER=1"
 else
   echo "HAS_INSTALLER=0"
@@ -212,7 +216,7 @@ func (e *Engine) stageACM(j *Job) error {
 
 	// Check if kubeconfig is reachable from API pod OR stage manifests to host for later.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
-	script := fmt.Sprintf(`set -euo pipefail
+	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/acm"
 echo "ACM channel=%s MCE=%s" > "$ROOT/acm/channels.txt"
@@ -249,7 +253,7 @@ func (e *Engine) stageSpokes(j *Job) error {
 		}
 	}
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
-	script := fmt.Sprintf(`set -euo pipefail
+	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/spokes"
 ls -la "$ROOT/out"/cluster-*.yaml 2>/dev/null || true
