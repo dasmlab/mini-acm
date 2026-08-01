@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -87,6 +88,7 @@ func (s *Server) routes() chi.Router {
 			r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
 			r.Post("/mockups/{id}/derive", s.derive)
 			r.Post("/mockups/{id}/validate", s.validateMockup)
+			r.Post("/mockups/{id}/deploy", s.deployMockup)
 			r.Delete("/mockups/{id}", s.deleteMockup)
 
 			r.Get("/inventory", s.listInventory)
@@ -264,24 +266,147 @@ func (s *Server) derive(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var m *mockup.MockUp
-	if r.Body != nil && r.ContentLength != 0 {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	raw = []byte(strings.TrimSpace(string(raw)))
+	// Optional JSON body: topology-only teaching check (free-form) without phase advance.
+	if len(raw) > 0 && string(raw) != "null" {
 		var body mockup.MockUp
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := json.Unmarshal(raw, &body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		body.Metadata.ID = id
-		m = &body
-	} else {
-		got, err := s.store.Get(id)
+		writeJSON(w, http.StatusOK, mockup.ValidateTopology(&body))
+		return
+	}
+	res, m, err := s.store.ValidatePlan(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":               res.OK,
+		"mode":             res.Mode,
+		"issues":           res.Issues,
+		"summary":          res.Summary,
+		"promoteSupported": res.PromoteSupported,
+		"mockup":           m,
+	})
+}
+
+func (s *Server) deployMockup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	res, m, err := s.store.ValidatePlan(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !res.OK {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":      "validate failed — fix issues before deploy",
+			"validation": res,
+			"mockup":     m,
+		})
+		return
+	}
+
+	host, reason := s.resolveInventoryHost(m)
+	if host == nil {
+		http.Error(w, reason, http.StatusConflict)
+		return
+	}
+	m, _ = s.store.LinkInventoryRef(id, host.ID)
+
+	if host.Status != inventory.StatusReachable && s.inventory != nil {
+		pr, err := s.inventory.Probe(host.ID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			http.Error(w, "inventory probe failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		m = got
+		host = pr.Host
+		if host == nil || host.Status != inventory.StatusReachable {
+			msg := "inventory host is not ready (need green Probe)"
+			if pr != nil && pr.Message != "" {
+				msg = pr.Message
+			}
+			http.Error(w, msg, http.StatusConflict)
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, mockup.ValidateTopology(m))
+
+	m, err = s.store.SetPhase(id, mockup.PhaseDeploying,
+		fmt.Sprintf("Deploying plan against inventory host %s (%s)…", host.Name, host.Endpoint()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// MVP click-through: accept the plan once a ready MACHINE-HOST is linked.
+	// Full VM / ACM bring-up remains Wizard CLI / future Ansible EE.
+	msg := fmt.Sprintf(
+		"Deployed plan against %s (%s) — libvirt ready. Next: fill pull-secret/SSH gaps, then `mock-me --manual hub create` (or future Ansible EE job).",
+		host.Name, host.Endpoint(),
+	)
+	m, err = s.store.SetPhase(id, mockup.PhaseDeployed, msg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mockup":    m,
+		"inventory": host,
+		"message":   msg,
+		"mode":      "plan-accept",
+	})
+}
+
+func (s *Server) resolveInventoryHost(m *mockup.MockUp) (*inventory.MachineHost, string) {
+	if s.inventory == nil {
+		return nil, "inventory store not configured"
+	}
+	list, err := s.inventory.List()
+	if err != nil {
+		return nil, "list inventory: " + err.Error()
+	}
+	if ref := m.Spec.InfraHost.InventoryRef; ref != "" {
+		for _, h := range list {
+			if h.ID == ref {
+				return h, ""
+			}
+		}
+		return nil, "inventoryRef not found: " + ref
+	}
+	want := strings.TrimSpace(m.Spec.InfraHost.SSHHost)
+	for _, h := range list {
+		if want != "" && (h.SSHHost == want || h.StretchedHost == want || h.EffectiveSSHHost() == want) {
+			return h, ""
+		}
+	}
+	// Fall back to single seed / sole ready host for default click-through.
+	var seed *inventory.MachineHost
+	var ready *inventory.MachineHost
+	for _, h := range list {
+		if h.Seed {
+			seed = h
+		}
+		if h.Status == inventory.StatusReachable && ready == nil {
+			ready = h
+		}
+	}
+	if ready != nil {
+		return ready, ""
+	}
+	if seed != nil {
+		return seed, ""
+	}
+	if len(list) == 1 {
+		return list[0], ""
+	}
+	return nil, "no inventory MACHINE-HOST to deploy against — add/probe one under Inventory"
 }
 
 func (s *Server) deleteMockup(w http.ResponseWriter, r *http.Request) {

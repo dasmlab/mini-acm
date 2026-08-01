@@ -13,16 +13,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Phase tracks wizard progress.
+// Phase tracks MockUp lifecycle (list badge + validate/deploy click-through).
 type Phase string
 
 const (
 	PhaseCreated    Phase = "created"
-	PhaseConfigured Phase = "configured"
-	PhaseHubReady   Phase = "hub-ready"
-	PhaseACMReady   Phase = "acm-ready"
-	PhaseClustered  Phase = "clustered"
-	PhaseReady      Phase = "ready"
+	PhaseConfigured Phase = "configured" // derived YAML under out/
+	PhaseValidated  Phase = "validated"  // topology (+ plan) checks passed
+	PhaseDeploying  Phase = "deploying"  // deploy job running against inventory
+	PhaseDeployed   Phase = "deployed"   // plan accepted / orchestration complete (MVP)
+	// Legacy milestones retained for older mockups / future fine-grained progress.
+	PhaseHubReady  Phase = "hub-ready"
+	PhaseACMReady  Phase = "acm-ready"
+	PhaseClustered Phase = "clustered"
+	PhaseReady     Phase = "ready"
 )
 
 // MockUp is the top-level lab rack object (like a Target in etcd-synthetic-load).

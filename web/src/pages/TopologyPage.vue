@@ -3,7 +3,12 @@
     <div class="row items-center q-mb-sm">
       <q-btn flat dense icon="arrow_back" :to="{ name: 'mockups' }" />
       <div class="col">
-        <div class="text-h5">{{ mockup?.metadata?.name || 'Topology' }}</div>
+        <div class="row items-center no-wrap q-gutter-sm">
+          <div class="text-h5">{{ mockup?.metadata?.name || 'Topology' }}</div>
+          <q-badge v-if="mockup?.status?.phase" :color="phaseColor(mockup.status.phase)" class="text-capitalize">
+            {{ mockup.status.phase }}
+          </q-badge>
+        </div>
         <div class="text-caption text-grey-6" v-if="mockup">
           {{ objectSummary }}
         </div>
@@ -23,14 +28,22 @@
         @update:model-value="onCanvasMode"
       />
       <q-btn
-        v-if="isFreeForm"
         outline
-        color="secondary"
+        color="deep-purple-7"
         icon="rule"
         label="Validate"
         class="q-mr-sm"
         :loading="validating"
         @click="onValidate"
+      />
+      <q-btn
+        outline
+        color="orange-9"
+        icon="rocket_launch"
+        label="Deploy"
+        class="q-mr-sm"
+        :loading="deploying"
+        @click="onDeploy"
       />
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
         <q-list style="min-width: 340px">
@@ -196,6 +209,10 @@
                     :to="{ name: 'wizard', params: { id } }" />
                   <q-btn flat color="primary" label="Derive" icon="description"
                     :loading="deriving" @click="onDerive" />
+                  <q-btn flat color="deep-purple-7" label="Validate" icon="rule"
+                    :loading="validating" @click="onValidate" />
+                  <q-btn flat color="orange-9" label="Deploy" icon="rocket_launch"
+                    :loading="deploying" @click="onDeploy" />
                 </div>
               </div>
             </template>
@@ -320,7 +337,7 @@ import { Dialog, Notify } from 'quasar'
 import TopologyCanvas from 'src/components/TopologyCanvas.vue'
 import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
@@ -332,6 +349,7 @@ const loading = ref(true)
 const saving = ref(false)
 const deriving = ref(false)
 const validating = ref(false)
+const deploying = ref(false)
 const validateOpen = ref(false)
 const validateResult = ref(null)
 const selected = ref(null)
@@ -345,6 +363,20 @@ let layoutTimer = null
 const isFreeForm = computed(() => canvasMode.value === 'freeform')
 const isSingleSNO = computed(() => mockup.value?.spec?.style === 'single-sno-ocp')
 const isACMMultiCluster = computed(() => !mockup.value?.spec?.style || mockup.value.spec.style === 'acm-multi-cluster')
+
+function phaseColor(phase) {
+  return {
+    created: 'grey-6',
+    configured: 'blue-7',
+    validated: 'deep-purple-6',
+    deploying: 'orange-8',
+    deployed: 'positive',
+    'hub-ready': 'blue-7',
+    'acm-ready': 'teal-7',
+    clustered: 'orange-7',
+    ready: 'positive',
+  }[phase] || 'grey-6'
+}
 
 const layerOptions = computed(() => {
   const all = [
@@ -814,7 +846,14 @@ async function onValidate() {
   validating.value = true
   try {
     await persistQuiet()
-    validateResult.value = await validateMockup(props.id, mockup.value)
+    // Free-form: topology teaching check on in-memory canvas.
+    // Guided: ValidatePlan (auto-derive if needed) and advance phase → validated.
+    if (isFreeForm.value) {
+      validateResult.value = await validateMockup(props.id, mockup.value)
+    } else {
+      validateResult.value = await validateMockup(props.id)
+      if (validateResult.value.mockup) mockup.value = validateResult.value.mockup
+    }
     validateOpen.value = true
     if (validateResult.value.ok) {
       Notify.create({ type: 'positive', message: validateResult.value.summary })
@@ -825,6 +864,23 @@ async function onValidate() {
     Notify.create({ type: 'negative', message: e.response?.data || e.message })
   } finally {
     validating.value = false
+  }
+}
+
+async function onDeploy() {
+  deploying.value = true
+  try {
+    await persistQuiet()
+    const res = await deployMockup(props.id)
+    if (res.mockup) mockup.value = res.mockup
+    Notify.create({ type: 'positive', message: res.message || 'Deployed.', timeout: 7000 })
+  } catch (e) {
+    const data = e.response?.data
+    const msg = typeof data === 'string' ? data : (data?.error || e.message)
+    Notify.create({ type: 'negative', message: msg, timeout: 7000 })
+    if (data?.mockup) mockup.value = data.mockup
+  } finally {
+    deploying.value = false
   }
 }
 

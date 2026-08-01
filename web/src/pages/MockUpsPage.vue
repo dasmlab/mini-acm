@@ -58,6 +58,14 @@
               @click="$router.push({ name: 'wizard', params: { id: m.metadata.id } })" />
             <q-btn flat dense size="sm" color="primary" label="Derive"
               :loading="deriveBusy === m.metadata.id" @click="doDerive(m)" />
+            <q-btn flat dense size="sm" color="deep-purple-7" label="Validate"
+              :loading="validateBusy === m.metadata.id"
+              :disable="phaseBusy(m)"
+              @click="doValidate(m)" />
+            <q-btn flat dense size="sm" color="orange-9" label="Deploy"
+              :loading="deployBusy === m.metadata.id"
+              :disable="phaseBusy(m) || !canDeploy(m)"
+              @click="doDeploy(m)" />
             <q-btn flat dense size="sm" color="negative" label="Delete" @click="doDelete(m)" />
           </q-card-actions>
         </q-card>
@@ -124,7 +132,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Dialog, Notify } from 'quasar'
-import { listMockups, createMockup, deleteMockup, deriveMockup, getCatalog } from 'src/services/api'
+import { listMockups, createMockup, deleteMockup, deriveMockup, validateMockup, deployMockup, getCatalog } from 'src/services/api'
 
 const mockups = ref([])
 const catalog = ref({ genres: [], styles: [] })
@@ -133,6 +141,8 @@ const error = ref('')
 const createOpen = ref(false)
 const creating = ref(false)
 const deriveBusy = ref('')
+const validateBusy = ref('')
+const deployBusy = ref('')
 const form = reactive({
   genre: 'cluster-management',
   style: 'acm-multi-cluster',
@@ -189,11 +199,24 @@ function statusColor(phase) {
   return {
     created: 'grey-6',
     configured: 'blue-7',
+    validated: 'deep-purple-6',
+    deploying: 'orange-8',
+    deployed: 'positive',
     'hub-ready': 'blue-7',
     'acm-ready': 'teal-7',
     clustered: 'orange-7',
     ready: 'positive',
   }[phase] || 'grey-6'
+}
+
+function phaseBusy(m) {
+  const id = m.metadata.id
+  return deriveBusy.value === id || validateBusy.value === id || deployBusy.value === id
+}
+
+function canDeploy(m) {
+  const p = m.status?.phase || 'created'
+  return ['configured', 'validated', 'deployed', 'hub-ready', 'acm-ready'].includes(p) || p === 'created'
 }
 
 function onGenreChange() {
@@ -254,6 +277,43 @@ async function doDerive(m) {
     Notify.create({ type: 'negative', message: e.response?.data || e.message })
   } finally {
     deriveBusy.value = ''
+  }
+}
+
+async function doValidate(m) {
+  validateBusy.value = m.metadata.id
+  try {
+    const res = await validateMockup(m.metadata.id)
+    if (res.ok) {
+      Notify.create({ type: 'positive', message: res.summary || 'Validated.' })
+    } else {
+      Notify.create({ type: 'warning', message: res.summary || 'Validation failed.' })
+    }
+    await load()
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    validateBusy.value = ''
+  }
+}
+
+async function doDeploy(m) {
+  deployBusy.value = m.metadata.id
+  try {
+    const res = await deployMockup(m.metadata.id)
+    Notify.create({
+      type: 'positive',
+      message: res.message || 'Deployed.',
+      timeout: 7000,
+    })
+    await load()
+  } catch (e) {
+    const data = e.response?.data
+    const msg = typeof data === 'string' ? data : (data?.error || data?.message || e.message)
+    Notify.create({ type: 'negative', message: msg, timeout: 7000 })
+    await load()
+  } finally {
+    deployBusy.value = ''
   }
 }
 

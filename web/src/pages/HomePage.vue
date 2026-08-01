@@ -19,21 +19,21 @@
         <span class="home-step-n">1</span>
         <span>
           <span class="home-step-t">MockUp</span>
-          <span class="home-step-d">Pick a genre/style · create a blueprint</span>
+          <span class="home-step-d">Create defaults · Configured after Derive</span>
         </span>
       </button>
       <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">
         <span class="home-step-n">2</span>
         <span>
-          <span class="home-step-t">Topology</span>
-          <span class="home-step-d">Place host, gateway, mgmt &amp; deployments</span>
+          <span class="home-step-t">Validate</span>
+          <span class="home-step-d">Topology + plan checks → Validated</span>
         </span>
       </button>
-      <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">
+      <button type="button" class="home-step" @click="$router.push({ name: 'inventory' })">
         <span class="home-step-n">3</span>
         <span>
-          <span class="home-step-t">Wizard</span>
-          <span class="home-step-d">Fill gaps · derive YAML · run CLI</span>
+          <span class="home-step-t">Deploy</span>
+          <span class="home-step-d">Ready inventory host → Deploying → Deployed</span>
         </span>
       </button>
     </div>

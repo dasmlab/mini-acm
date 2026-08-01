@@ -92,7 +92,17 @@ export async function deriveMockup(id) {
 }
 
 export async function validateMockup(id, mockup) {
-  const { data } = await api.post(`/mockups/${id}/validate`, mockup || undefined)
+  // Body = teaching/topology-only check (no phase advance). Omit body to ValidatePlan + persist.
+  if (mockup) {
+    const { data } = await api.post(`/mockups/${id}/validate`, mockup)
+    return data
+  }
+  const { data } = await api.post(`/mockups/${id}/validate`)
+  return data
+}
+
+export async function deployMockup(id) {
+  const { data } = await api.post(`/mockups/${id}/deploy`, undefined, { timeout: 90_000 })
   return data
 }
 
