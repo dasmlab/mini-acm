@@ -22,45 +22,44 @@
       <q-stepper v-model="step" color="primary" animated flat bordered header-nav class="wizard-stepper">
         <q-step :name="0" title="Infra host" icon="precision_manufacturing" :done="step > 0">
           <div class="text-subtitle1 q-mb-sm">
-            Phase 0 — RHEL machine that runs the CLI (podman) and libvirt guests
+            Phase 0 — MACHINE-HOST (libvirtd) + VYOS-GW (edge)
           </div>
-          <div class="row q-col-gutter-md" v-if="mockup.spec.infraHost">
-            <div class="col-12 col-md-6">
+          <div class="row q-col-gutter-md">
+            <div class="col-12 col-md-6" v-if="mockup.spec.infraHost">
               <q-banner dense rounded class="bg-blue-grey-1 text-blue-grey-10 q-mb-md">
-                BM host or nested VM where commands run. Libvirt slices MGMT + DEPLOYMENT cluster VMs here.
-                ACM analogue: BareMetalHost / provisioner inventory — not an OCP node.
-                Guests install via InfraEnv (<code>agentBareMetal</code>).
+                RHEL MACHINE-HOST at <code>{{ mockup.spec.infraHost.sshHost || 'ssh?' }}</code>.
+                Bridged = uplink; VMnet12 host-only optional. 250G = OS/logs; 400G = guest pool.
+                Lab guests are <em>not</em> on VMnet12 — they sit on libvirt LAN behind VyOS.
               </q-banner>
               <q-markup-table flat bordered dense>
                 <tbody>
                   <tr><td>Label</td><td>{{ mockup.spec.infraHost.label }}</td></tr>
                   <tr><td>Hostname</td><td>{{ mockup.spec.infraHost.hostname }}</td></tr>
-                  <tr><td>Kind / OS</td><td>{{ mockup.spec.infraHost.kind }}{{ mockup.spec.infraHost.hypervisor ? ' / ' + mockup.spec.infraHost.hypervisor : '' }} · {{ mockup.spec.infraHost.os }}</td></tr>
-                  <tr><td>Capacity</td><td>{{ mockup.spec.infraHost.cpu }}c / {{ Math.round(mockup.spec.infraHost.memoryMiB/1024) }}G</td></tr>
-                  <tr><td>Disks</td><td>{{ (mockup.spec.infraHost.disks || []).map(d => `${d.name||'disk'} ${d.sizeGiB}G ${d.bus||''}`).join(' · ') || mockup.spec.infraHost.diskGiB + ' GiB' }}</td></tr>
-                  <tr><td>NICs</td><td>{{ (mockup.spec.infraHost.nics || []).map(n => `${n.name||'nic'} ${n.mode||''}`).join(' · ') || '1× bridged' }}</td></tr>
-                  <tr><td>Libvirt</td><td><code>{{ mockup.spec.infraHost.libvirtURI }}</code> · {{ mockup.spec.infraHost.networkName }}</td></tr>
-                  <tr><td>Podman</td><td>{{ mockup.spec.infraHost.podman ? 'yes' : 'no' }}</td></tr>
+                  <tr><td>SSH</td><td>{{ mockup.spec.infraHost.sshHost }}</td></tr>
+                  <tr><td>Kind / OS</td><td>{{ mockup.spec.infraHost.kind }} / {{ mockup.spec.infraHost.hypervisor }} · {{ mockup.spec.infraHost.os }}</td></tr>
+                  <tr><td>Disks</td><td>{{ (mockup.spec.infraHost.disks || []).map(d => `${d.sizeGiB}G ${d.role}`).join(' + ') }}</td></tr>
+                  <tr><td>NICs</td><td>{{ (mockup.spec.infraHost.nics || []).map(n => `${n.name} ${n.role||n.mode}`).join(' · ') }}</td></tr>
                 </tbody>
               </q-markup-table>
+              <q-input v-model="mockup.spec.infraHost.sshHost" outlined dense label="SSH endpoint" class="q-mt-md" />
             </div>
-            <div class="col-12 col-md-6">
-              <q-input v-model="mockup.spec.infraHost.hostname" outlined dense label="Hostname" class="q-mb-sm" />
-              <q-select v-model="mockup.spec.infraHost.kind" :options="['nested-vm', 'baremetal']"
-                outlined dense label="Host kind" class="q-mb-sm" />
-              <q-select v-if="mockup.spec.infraHost.kind === 'nested-vm'"
-                v-model="mockup.spec.infraHost.hypervisor" :options="['vmware', 'kvm', 'none']"
-                outlined dense label="Outer hypervisor" class="q-mb-sm" />
-              <q-select v-model="mockup.spec.infraHost.os" :options="['rhel-10', 'rhel-9']"
-                outlined dense label="OS" class="q-mb-sm" />
-              <q-input v-model="mockup.spec.infraHost.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm"
-                hint="MVP gap — where you ssh to run mini-acm / virsh" />
-              <q-input v-model="mockup.spec.infraHost.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
-              <div class="text-caption text-grey-7 q-mb-xs">
-                Disks/NICs: edit on Topology → INFRA-HOST (defaults match a nested RHEL 10 vHOST: 250G+400G NVMe, 1× bridged).
-              </div>
-              <q-banner dense rounded class="bg-grey-2 text-caption">
-                Derive emits <code>out/infra-host.yaml</code> (kind InfraHost) with hub/cluster YAMLs.
+            <div class="col-12 col-md-6" v-if="mockup.spec.gateway">
+              <q-banner dense rounded class="bg-orange-1 text-orange-10 q-mb-md">
+                <strong>VYOS-GW</strong> — boot ISO later. eth0 WAN (bridged), eth1 LAN
+                (<code>{{ mockup.spec.gateway.lanCIDR }}</code>). Hub + deployment VMs on LAN.
+              </q-banner>
+              <q-markup-table flat bordered dense>
+                <tbody>
+                  <tr><td>Hostname</td><td>{{ mockup.spec.gateway.hostname }}</td></tr>
+                  <tr><td>Phase</td><td>{{ mockup.spec.gateway.phase }}</td></tr>
+                  <tr><td>WAN</td><td>{{ mockup.spec.gateway.wanBridge }}</td></tr>
+                  <tr><td>LAN</td><td>{{ mockup.spec.gateway.lanNetwork }} · {{ mockup.spec.gateway.lanIP }} / {{ mockup.spec.gateway.lanCIDR }}</td></tr>
+                  <tr><td>NAT / FW</td><td>{{ mockup.spec.gateway.nat ? 'yes' : 'no' }} / {{ mockup.spec.gateway.firewall ? 'yes' : 'no' }}</td></tr>
+                </tbody>
+              </q-markup-table>
+              <q-input v-model="mockup.spec.gateway.isoPath" outlined dense label="VyOS ISO path (MVP gap)" class="q-mt-md" />
+              <q-banner dense rounded class="bg-grey-2 text-caption q-mt-sm">
+                Derive emits <code>out/infra-host.yaml</code> + <code>out/gateway.yaml</code>.
               </q-banner>
             </div>
           </div>

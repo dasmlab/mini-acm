@@ -26,6 +26,12 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 	}
 	paths["infraHost"] = infraPath
 
+	gwPath := filepath.Join(outDir, "gateway.yaml")
+	if err := writeYAML(gwPath, gatewayDoc(m)); err != nil {
+		return nil, err
+	}
+	paths["gateway"] = gwPath
+
 	hubPath := filepath.Join(outDir, "hub.yaml")
 	if err := writeYAML(hubPath, hubDoc(m)); err != nil {
 		return nil, err
@@ -46,6 +52,37 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 	return paths, nil
 }
 
+func gatewayDoc(m *MockUp) map[string]any {
+	g := m.Spec.Gateway
+	return map[string]any{
+		"apiVersion": "mini-acm.dasmlab.org/v1alpha1",
+		"kind":       "Gateway",
+		"metadata": map[string]any{
+			"name":  g.Hostname,
+			"notes": g.Notes,
+			"labels": map[string]any{
+				"mini-acm.dasmlab.org/role": "edge-router",
+				"mini-acm.dasmlab.org/image": g.Image,
+			},
+		},
+		"spec": map[string]any{
+			"image": g.Image, "isoPath": g.ISOPath, "phase": g.Phase,
+			"capacity": map[string]any{
+				"cpu": g.CPU, "memoryMiB": g.MemoryMiB, "diskGiB": g.DiskGiB,
+			},
+			"disks": g.Disks,
+			"nics":  g.NICs,
+			"wan":   map[string]any{"bridge": g.WANBridge},
+			"lan": map[string]any{
+				"network": g.LANNetwork, "cidr": g.LANCIDR, "ip": g.LANIP,
+			},
+			"nat": g.NAT, "firewall": g.Firewall,
+			"infraHost": m.Spec.InfraHost.Hostname,
+			"hostsLabGuests": true,
+		},
+	}
+}
+
 func infraHostDoc(m *MockUp) map[string]any {
 	h := m.Spec.InfraHost
 	return map[string]any{
@@ -55,7 +92,7 @@ func infraHostDoc(m *MockUp) map[string]any {
 			"name":  h.Hostname,
 			"notes": h.Notes,
 			"labels": map[string]any{
-				"mini-acm.dasmlab.org/role": "provisioner",
+				"mini-acm.dasmlab.org/role": "machine-host",
 				"acm.reference":             "BareMetalHost-analogue",
 			},
 		},

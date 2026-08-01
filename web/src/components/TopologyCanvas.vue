@@ -89,21 +89,33 @@ const nodes = computed(() => {
 
   const infra = m.spec.infraHost
   if (infra?.id) {
-    const ip = pos(infra.id, { x: 140, y: 480 })
+    const ip = pos(infra.id, { x: 120, y: 500 })
     const kind = infra.kind === 'nested-vm' ? (infra.hypervisor || 'nested') : 'BM'
     const disks = (infra.disks || []).length
     const nics = (infra.nics || []).length
     out.push({
       id: infra.id,
       kind: 'infraHost',
-      label: infra.label || 'INFRA-HOST',
-      sub: `${infra.os || 'rhel'} · ${kind} · ${disks}disk/${nics}nic`,
+      label: infra.label || 'MACHINE-HOST',
+      sub: `${infra.os || 'rhel'} · ${kind} · ${disks}d/${nics}n`,
       x: ip.x, y: ip.y, w: 210, h: 64, rx: 8, cls: 'fill-infra',
     })
   }
 
+  const gw = m.spec.gateway
+  if (gw?.id) {
+    const gp = pos(gw.id, { x: 140, y: 340 })
+    out.push({
+      id: gw.id,
+      kind: 'gateway',
+      label: gw.label || 'VYOS-GW',
+      sub: `WAN↔LAN · ${gw.lanCIDR || 'lab'}`,
+      x: gp.x, y: gp.y, w: 160, h: 60, rx: 10, cls: 'fill-gateway',
+    })
+  }
+
   const hub = m.spec.hub
-  const hp = pos(hub.id, { x: 300, y: 300 })
+  const hp = pos(hub.id, { x: 340, y: 300 })
   out.push({
     id: hub.id,
     kind: 'hub',
@@ -113,7 +125,7 @@ const nodes = computed(() => {
   })
 
   const acm = m.spec.acm
-  const ap = pos(acm.id, { x: 300, y: 160 })
+  const ap = pos(acm.id, { x: 340, y: 150 })
   out.push({
     id: acm.id,
     kind: 'acm',
@@ -123,7 +135,7 @@ const nodes = computed(() => {
   })
 
   ;(m.spec.clusters || []).forEach((c, i) => {
-    const cp = pos(c.id, { x: 560, y: 160 + i * 120 })
+    const cp = pos(c.id, { x: 580, y: 160 + i * 120 })
     out.push({
       id: c.id,
       kind: 'cluster',
@@ -139,16 +151,24 @@ const nodes = computed(() => {
 const edges = computed(() => {
   const byId = Object.fromEntries(nodes.value.map((n) => [n.id, n]))
   const infra = byId[props.mockup?.spec?.infraHost?.id]
+  const gw = byId[props.mockup?.spec?.gateway?.id]
   const hub = byId[props.mockup?.spec?.hub?.id]
   const acm = byId[props.mockup?.spec?.acm?.id]
   const out = []
 
-  // Host slices guest VMs (libvirt) — dashed foundation edges
+  // MACHINE-HOST runs VyOS + guest VMs
+  if (infra && gw) {
+    out.push({
+      id: 'infra-gw',
+      d: curve(infra.x, infra.y - 32, gw.x, gw.y + 30),
+      stroke: '#546e7a', width: 2, dash: '6 4', marker: 'url(#arrow-host)',
+    })
+  }
   if (infra && hub) {
     out.push({
       id: 'infra-hub',
-      d: curve(infra.x + 60, infra.y - 32, hub.x - 40, hub.y + 30),
-      stroke: '#546e7a', width: 2, dash: '6 4', marker: 'url(#arrow-host)',
+      d: curve(infra.x + 70, infra.y - 32, hub.x - 40, hub.y + 30),
+      stroke: '#546e7a', width: 1.5, dash: '6 4', marker: 'url(#arrow-host)',
     })
   }
   ;(props.mockup?.spec?.clusters || []).forEach((c) => {
@@ -156,8 +176,27 @@ const edges = computed(() => {
     if (infra && n) {
       out.push({
         id: `infra-${c.id}`,
-        d: curve(infra.x + 80, infra.y - 20, n.x - 40, n.y + 30),
-        stroke: '#546e7a', width: 1.5, dash: '6 4', marker: 'url(#arrow-host)',
+        d: curve(infra.x + 90, infra.y - 20, n.x - 40, n.y + 30),
+        stroke: '#546e7a', width: 1.25, dash: '6 4', marker: 'url(#arrow-host)',
+      })
+    }
+  })
+
+  // VyOS LAN attaches lab guests
+  if (gw && hub) {
+    out.push({
+      id: 'gw-hub',
+      d: curve(gw.x + 70, gw.y, hub.x - 70, hub.y),
+      stroke: '#ef6c00', width: 2.5, dash: null, marker: 'url(#arrow)',
+    })
+  }
+  ;(props.mockup?.spec?.clusters || []).forEach((c) => {
+    const n = byId[c.id]
+    if (gw && n) {
+      out.push({
+        id: `gw-${c.id}`,
+        d: curve(gw.x + 60, gw.y + 10, n.x - 90, n.y + 10),
+        stroke: '#ef6c00', width: 1.75, dash: '4 3', marker: 'url(#arrow)',
       })
     }
   })
@@ -232,6 +271,7 @@ function onClick(n) {
 .topo-node { cursor: pointer; }
 .topo-node.active rect { filter: brightness(1.05); }
 .fill-infra { fill: #37474f; }
+.fill-gateway { fill: #e65100; }
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }

@@ -43,59 +43,83 @@ type Metadata struct {
 }
 
 type Spec struct {
-	BaseDomain string        `json:"baseDomain" yaml:"baseDomain"`
-	Provider   string        `json:"provider" yaml:"provider"`
-	Network    NetworkSpec   `json:"network" yaml:"network"`
-	// InfraHost is the RHEL BM or nested VM that runs podman + libvirt and
-	// slices hub/cluster guest VMs. Conceptual peer to ACM BareMetalHost /
-	// provisioner host — not an OCP node itself.
+	BaseDomain string      `json:"baseDomain" yaml:"baseDomain"`
+	Provider   string      `json:"provider" yaml:"provider"`
+	Network    NetworkSpec `json:"network" yaml:"network"`
+	// InfraHost = MACHINE HOST: RHEL (BM or nested) where libvirtd/podman run.
 	InfraHost InfraHostNode `json:"infraHost" yaml:"infraHost"`
-	Hub       HubNode       `json:"hub" yaml:"hub"`
-	ACM       ACMNode       `json:"acm" yaml:"acm"`
-	Clusters  []ClusterNode `json:"clusters" yaml:"clusters"`
-	Gaps      GapParams     `json:"gaps" yaml:"gaps"` // MVP gap fields captured in UI
+	// Gateway = VyOS (or similar) VM: WAN on host bridge, LAN = lab libvirt net.
+	Gateway GatewayNode `json:"gateway" yaml:"gateway"`
+	// Hub = MGMT-CLUSTER SNO guest VM (governance OCP); ACM operators on top.
+	Hub      HubNode       `json:"hub" yaml:"hub"`
+	ACM      ACMNode       `json:"acm" yaml:"acm"`
+	Clusters []ClusterNode `json:"clusters" yaml:"clusters"`
+	Gaps     GapParams     `json:"gaps" yaml:"gaps"`
 }
 
-// InfraHostNode is the lab machine that hosts libvirt guests for the ACM demo.
-// Styling/naming echoes ACM BareMetalHost + Metal3 host inventory; platform
-// for guest installs remains agentBareMetal via InfraEnv (not this object).
-// Capacity includes multi-disk / multi-NIC inventory (outer vHOST or BM).
+// InfraHostNode is the MACHINE HOST (libvirtd). Not an OCP node.
+// Disks: small system + large pool for guest images. NICs: bridged uplink
+// (+ optional host-only/dummy for future class moves).
 type InfraHostNode struct {
-	ID          string `json:"id" yaml:"id"`
-	Label       string `json:"label" yaml:"label"` // INFRA-HOST
-	Hostname    string `json:"hostname" yaml:"hostname"`
-	Kind        string `json:"kind" yaml:"kind"`               // baremetal | nested-vm
-	Hypervisor  string `json:"hypervisor,omitempty" yaml:"hypervisor,omitempty"` // vmware | kvm | none
-	OS          string `json:"os" yaml:"os"`                   // rhel-9 | rhel-10
-	Arch        string `json:"arch,omitempty" yaml:"arch,omitempty"`
-	CPU         int    `json:"cpu" yaml:"cpu"` // host capacity
-	MemoryMiB   int    `json:"memoryMiB" yaml:"memoryMiB"`
-	DiskGiB     int    `json:"diskGiB" yaml:"diskGiB"` // total; kept in sync with Disks
-	Disks       []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
-	NICs        []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"`
-	LibvirtURI  string `json:"libvirtURI,omitempty" yaml:"libvirtURI,omitempty"`
-	NetworkName string `json:"networkName,omitempty" yaml:"networkName,omitempty"`
-	StoragePool string `json:"storagePool,omitempty" yaml:"storagePool,omitempty"`
-	Podman      bool   `json:"podman" yaml:"podman"` // UI/serve often via podman
-	SSHHost     string `json:"sshHost,omitempty" yaml:"sshHost,omitempty"`
-	Notes       string `json:"notes,omitempty" yaml:"notes,omitempty"`
-	ACMReference string `json:"acmReference,omitempty" yaml:"acmReference,omitempty"`
+	ID           string     `json:"id" yaml:"id"`
+	Label        string     `json:"label" yaml:"label"` // MACHINE-HOST / INFRA-HOST
+	Hostname     string     `json:"hostname" yaml:"hostname"`
+	Kind         string     `json:"kind" yaml:"kind"`                                     // baremetal | nested-vm
+	Hypervisor   string     `json:"hypervisor,omitempty" yaml:"hypervisor,omitempty"`     // vmware | kvm | none
+	OS           string     `json:"os" yaml:"os"`                                         // rhel-9 | rhel-10
+	Arch         string     `json:"arch,omitempty" yaml:"arch,omitempty"`
+	CPU          int        `json:"cpu" yaml:"cpu"`
+	MemoryMiB    int        `json:"memoryMiB" yaml:"memoryMiB"`
+	DiskGiB      int        `json:"diskGiB" yaml:"diskGiB"`
+	Disks        []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
+	NICs         []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"`
+	LibvirtURI   string     `json:"libvirtURI,omitempty" yaml:"libvirtURI,omitempty"`
+	NetworkName  string     `json:"networkName,omitempty" yaml:"networkName,omitempty"` // lab LAN net name
+	StoragePool  string     `json:"storagePool,omitempty" yaml:"storagePool,omitempty"`
+	Podman       bool       `json:"podman" yaml:"podman"`
+	SSHHost      string     `json:"sshHost,omitempty" yaml:"sshHost,omitempty"`
+	Notes        string     `json:"notes,omitempty" yaml:"notes,omitempty"`
+	ACMReference string     `json:"acmReference,omitempty" yaml:"acmReference,omitempty"`
+}
+
+// GatewayNode is the lab edge router VM (VyOS): NAT/FW between real bridge (WAN)
+// and the obscure private libvirt LAN where hub + deployment guests live.
+type GatewayNode struct {
+	ID         string     `json:"id" yaml:"id"`
+	Label      string     `json:"label" yaml:"label"` // VYOS-GW
+	Hostname   string     `json:"hostname" yaml:"hostname"`
+	Image      string     `json:"image,omitempty" yaml:"image,omitempty"` // vyos | similar
+	ISOPath    string     `json:"isoPath,omitempty" yaml:"isoPath,omitempty"`
+	CPU        int        `json:"cpu" yaml:"cpu"`
+	MemoryMiB  int        `json:"memoryMiB" yaml:"memoryMiB"`
+	DiskGiB    int        `json:"diskGiB" yaml:"diskGiB"`
+	Disks      []DiskSpec `json:"disks,omitempty" yaml:"disks,omitempty"`
+	NICs       []NICSpec  `json:"nics,omitempty" yaml:"nics,omitempty"` // eth0 WAN, eth1 LAN
+	WANBridge  string     `json:"wanBridge,omitempty" yaml:"wanBridge,omitempty"`
+	LANNetwork string     `json:"lanNetwork,omitempty" yaml:"lanNetwork,omitempty"`
+	LANCIDR    string     `json:"lanCIDR,omitempty" yaml:"lanCIDR,omitempty"`
+	LANIP      string     `json:"lanIP,omitempty" yaml:"lanIP,omitempty"` // typically .1
+	NAT        bool       `json:"nat" yaml:"nat"`
+	Firewall   bool       `json:"firewall" yaml:"firewall"`
+	Phase      string     `json:"phase,omitempty" yaml:"phase,omitempty"` // planned | booted | configured
+	Notes      string     `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 // DiskSpec describes one block device (vHOST inventory or guest VM disk).
 type DiskSpec struct {
-	Name    string `json:"name,omitempty" yaml:"name,omitempty"` // root, data0, …
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"`
 	SizeGiB int    `json:"sizeGiB" yaml:"sizeGiB"`
 	Bus     string `json:"bus,omitempty" yaml:"bus,omitempty"`   // nvme | virtio | sata
 	Role    string `json:"role,omitempty" yaml:"role,omitempty"` // system | data | pool
 }
 
-// NICSpec describes one network interface (flat/bridged MVP: usually one).
+// NICSpec describes one network interface.
 type NICSpec struct {
-	Name    string `json:"name,omitempty" yaml:"name,omitempty"`       // eth0, ens192
+	Name    string `json:"name,omitempty" yaml:"name,omitempty"`
 	Model   string `json:"model,omitempty" yaml:"model,omitempty"`     // virtio | e1000e
-	Mode    string `json:"mode,omitempty" yaml:"mode,omitempty"`       // bridged | nat | isolated | libvirt-network
-	Network string `json:"network,omitempty" yaml:"network,omitempty"` // bridge or libvirt net name
+	Mode    string `json:"mode,omitempty" yaml:"mode,omitempty"`       // bridged | nat | isolated | libvirt-network | host-only
+	Network string `json:"network,omitempty" yaml:"network,omitempty"` // bridge / vmnet / libvirt net
+	Role    string `json:"role,omitempty" yaml:"role,omitempty"`       // wan | lan | uplink | host-only | guest
 }
 
 type NetworkSpec struct {
@@ -224,10 +248,13 @@ func (s *Store) Create(req CreateReq) (*MockUp, error) {
 
 func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 	infraID := "infra-host"
+	gwID := "gateway"
 	hubID := "hub"
 	acmID := "acm"
-	c0 := newClusterNode(0, "4.18", "192.168.130.10", "192.168.130.11")
-	c1 := newClusterNode(1, "4.18", "192.168.130.12", "192.168.130.13")
+	// Lab LAN behind VyOS (obscure private — not home LAN, not VMnet12).
+	c0 := newClusterNode(0, "4.18", "10.77.30.10", "10.77.30.11")
+	c1 := newClusterNode(1, "4.18", "10.77.30.12", "10.77.30.13")
+	gw := defaultGateway()
 	return &MockUp{
 		APIVersion: "mini-acm.dasmlab.org/v1alpha1",
 		Kind:       "MockUp",
@@ -238,28 +265,31 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 			BaseDomain: domain,
 			Provider:   provider,
 			Network: NetworkSpec{
-				MachineCIDR: "192.168.130.0/24",
-				Gateway:     "192.168.130.1",
-				APIVIP:      "192.168.130.10",
-				IngressVIP:  "192.168.130.11",
-				DHCPStart:   "192.168.130.100",
-				DHCPEnd:     "192.168.130.150",
-				DNS:         "192.168.130.1",
+				MachineCIDR: "10.77.30.0/24",
+				Gateway:     "10.77.30.1",
+				APIVIP:      "10.77.30.10",
+				IngressVIP:  "10.77.30.11",
+				DHCPStart:   "10.77.30.100",
+				DHCPEnd:     "10.77.30.150",
+				DNS:         "10.77.30.1",
 			},
 			InfraHost: defaultInfraHost(name),
+			Gateway:   gw,
 			Hub: HubNode{
 				ID: hubID, Label: "MGMT-CLUSTER", Mode: "local-agent",
 				Version: "4.18", Profile: "hub-supported",
-				Hostname: "hub-sno", IP: "192.168.130.20", MAC: "52:54:00:13:00:20",
+				Hostname: "hub-sno", IP: "10.77.30.20", MAC: "52:54:00:13:00:20",
 				CPU: 8, MemoryMiB: 24576, DiskGiB: 200, InstallACM: true,
 				Disks: []DiskSpec{{Name: "vda", SizeGiB: 200, Bus: "virtio", Role: "system"}},
-				NICs:  []NICSpec{{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab"}},
+				NICs: []NICSpec{{
+					Name: "eth0", Model: "virtio", Mode: "libvirt-network",
+					Network: "ocp-lab", Role: "guest",
+				}},
 			},
 			ACM: ACMNode{
 				ID: acmID, Label: "ACM", Enabled: true,
 				MCEChannel: "stable-2.7", ACMChannel: "release-2.12",
 			},
-			// Two clusters by default so multi-lifecycle is visible immediately.
 			Clusters: []ClusterNode{c0, c1},
 			Gaps: GapParams{
 				ManualApprove:    true,
@@ -268,13 +298,14 @@ func defaultMockUp(id, name, domain, provider, notes, now string) *MockUp {
 				HubKubeconfig:    fmt.Sprintf("./data/hub-%s/auth/kubeconfig", name),
 			},
 		},
-		Status: Status{Phase: PhaseCreated, Message: "MockUp created — add/edit clusters on Topology, fill gaps in Wizard"},
+		Status: Status{Phase: PhaseCreated, Message: "MockUp created — MACHINE-HOST + VYOS-GW + MGMT + deployment clusters"},
 		Layout: Layout{Nodes: map[string]NodePos{
-			infraID: {X: 120, Y: 460},
-			hubID:   {X: 280, Y: 300},
-			acmID:   {X: 280, Y: 160},
-			c0.ID:   {X: 560, Y: 200},
-			c1.ID:   {X: 560, Y: 340},
+			infraID: {X: 120, Y: 500},
+			gwID:    {X: 140, Y: 340},
+			hubID:   {X: 340, Y: 300},
+			acmID:   {X: 340, Y: 150},
+			c0.ID:   {X: 580, Y: 180},
+			c1.ID:   {X: 580, Y: 320},
 		}},
 	}
 }
@@ -284,24 +315,43 @@ func defaultInfraHost(rackName string) InfraHostNode {
 	if rackName != "" {
 		host = "prov-" + rackName
 	}
-	// Shaped like a nested RHEL 10 vHOST (e.g. VMware): multi-disk + single bridged NIC.
+	// Nested RHEL 10 MACHINE HOST: OS disk + libvirt pool disk; bridged uplink + optional host-only.
 	disks := []DiskSpec{
-		{Name: "nvme0", SizeGiB: 250, Bus: "nvme", Role: "system"},
-		{Name: "nvme1", SizeGiB: 400, Bus: "nvme", Role: "pool"},
+		{Name: "nvme0", SizeGiB: 250, Bus: "nvme", Role: "system"}, // OS/logs only
+		{Name: "nvme1", SizeGiB: 400, Bus: "nvme", Role: "pool"},   // guest VM storage
 	}
 	return InfraHostNode{
-		ID: "infra-host", Label: "INFRA-HOST",
+		ID: "infra-host", Label: "MACHINE-HOST",
 		Hostname: host, Kind: "nested-vm", Hypervisor: "vmware",
 		OS: "rhel-10", Arch: "x86_64",
 		CPU: 24, MemoryMiB: 40960,
 		Disks: disks, DiskGiB: sumDiskGiB(disks),
 		NICs: []NICSpec{
-			{Name: "ens192", Model: "e1000e", Mode: "bridged", Network: "bridged-auto"},
+			{Name: "ens192", Model: "e1000e", Mode: "bridged", Network: "bridged-auto", Role: "uplink"},
+			// VMnet12 host-only — reserved for future "move up a class"; not the lab LAN.
+			{Name: "ens224", Model: "e1000e", Mode: "host-only", Network: "VMnet12", Role: "host-only"},
 		},
 		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "default",
-		Podman: true,
-		ACMReference: "BareMetalHost / agentBareMetal — this host runs libvirt guests; guests install via InfraEnv",
-		Notes: "Nested RHEL 10 vHOST (or BM): runs CLI + podman + libvirt; slices MGMT + DEPLOYMENT cluster VMs. Disks/NICs inventory informs capacity planning.",
+		Podman:  true,
+		SSHHost: "192.168.1.142",
+		ACMReference: "BareMetalHost analogue — libvirtd host; guests install via InfraEnv (agentBareMetal)",
+		Notes: "RHEL MACHINE HOST (BM or nested). Bridged NIC for SSH/mgmt; host-only VMnet12 optional. Libvirt LAN is behind VYOS-GW, not on VMnet12. Large disk = guest pool.",
+	}
+}
+
+func defaultGateway() GatewayNode {
+	disks := []DiskSpec{{Name: "vda", SizeGiB: 10, Bus: "virtio", Role: "system"}}
+	return GatewayNode{
+		ID: "gateway", Label: "VYOS-GW", Hostname: "vyos-lab-gw",
+		Image: "vyos", CPU: 2, MemoryMiB: 2048, DiskGiB: 10, Disks: disks,
+		NICs: []NICSpec{
+			{Name: "eth0", Model: "virtio", Mode: "bridged", Network: "bridged-auto", Role: "wan"},
+			{Name: "eth1", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab", Role: "lan"},
+		},
+		WANBridge: "bridged-auto", LANNetwork: "ocp-lab",
+		LANCIDR: "10.77.30.0/24", LANIP: "10.77.30.1",
+		NAT: true, Firewall: true, Phase: "planned",
+		Notes: "Boot VyOS ISO on MACHINE-HOST. eth0=WAN (host bridge), eth1=LAN (libvirt ocp-lab). Hub + deployment guests live on LAN; NAT/FW out of band for now.",
 	}
 }
 
@@ -315,9 +365,9 @@ func newClusterNode(index int, version, apiVIP, ingressVIP string) ClusterNode {
 		Version: version, Profile: "supported", Count: 3,
 		CPU: 4, MemoryMiB: 16384, DiskGiB: 120, Disks: disks,
 		NICs: []NICSpec{
-			{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab"},
+			{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: "ocp-lab", Role: "guest"},
 		},
-		IPBase:          fmt.Sprintf("192.168.130.%d", 21+(index*10)),
+		IPBase:          fmt.Sprintf("10.77.30.%d", 21+(index*10)),
 		MACPrefix:       fmt.Sprintf("52:54:00:%02x:00", 0x13+index),
 		APIVIP:          apiVIP,
 		IngressVIP:      ingressVIP,
@@ -342,7 +392,7 @@ func ensureGuestDisksNICs(diskGiB int, network string) ([]DiskSpec, []NICSpec, i
 		network = "ocp-lab"
 	}
 	disks := []DiskSpec{{Name: "vda", SizeGiB: diskGiB, Bus: "virtio", Role: "system"}}
-	nics := []NICSpec{{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: network}}
+	nics := []NICSpec{{Name: "eth0", Model: "virtio", Mode: "libvirt-network", Network: network, Role: "guest"}}
 	return disks, nics, diskGiB
 }
 
@@ -435,12 +485,21 @@ func normalize(m *MockUp) {
 			m.Layout.Nodes = map[string]NodePos{}
 		}
 		if _, ok := m.Layout.Nodes[m.Spec.InfraHost.ID]; !ok {
-			m.Layout.Nodes[m.Spec.InfraHost.ID] = NodePos{X: 120, Y: 460}
+			m.Layout.Nodes[m.Spec.InfraHost.ID] = NodePos{X: 120, Y: 500}
+		}
+	}
+	if m.Spec.Gateway.ID == "" {
+		m.Spec.Gateway = defaultGateway()
+		if m.Layout.Nodes == nil {
+			m.Layout.Nodes = map[string]NodePos{}
+		}
+		if _, ok := m.Layout.Nodes[m.Spec.Gateway.ID]; !ok {
+			m.Layout.Nodes[m.Spec.Gateway.ID] = NodePos{X: 140, Y: 340}
 		}
 	}
 	ih := &m.Spec.InfraHost
-	if ih.Label == "" {
-		ih.Label = "INFRA-HOST"
+	if ih.Label == "" || ih.Label == "INFRA-HOST" {
+		ih.Label = "MACHINE-HOST"
 	}
 	if ih.Kind == "" {
 		ih.Kind = "nested-vm"
@@ -463,8 +522,11 @@ func normalize(m *MockUp) {
 	if ih.StoragePool == "" {
 		ih.StoragePool = "default"
 	}
+	if ih.SSHHost == "" {
+		ih.SSHHost = "192.168.1.142"
+	}
 	if ih.ACMReference == "" {
-		ih.ACMReference = "BareMetalHost / agentBareMetal — this host runs libvirt guests; guests install via InfraEnv"
+		ih.ACMReference = "BareMetalHost analogue — libvirtd host; guests install via InfraEnv (agentBareMetal)"
 	}
 	if len(ih.Disks) == 0 {
 		if ih.DiskGiB > 0 {
@@ -478,7 +540,62 @@ func normalize(m *MockUp) {
 	}
 	ih.DiskGiB = sumDiskGiB(ih.Disks)
 	if len(ih.NICs) == 0 {
-		ih.NICs = []NICSpec{{Name: "ens192", Model: "virtio", Mode: "bridged", Network: "bridged-auto"}}
+		ih.NICs = []NICSpec{
+			{Name: "ens192", Model: "e1000e", Mode: "bridged", Network: "bridged-auto", Role: "uplink"},
+			{Name: "ens224", Model: "e1000e", Mode: "host-only", Network: "VMnet12", Role: "host-only"},
+		}
+	}
+
+	gw := &m.Spec.Gateway
+	if gw.Label == "" {
+		gw.Label = "VYOS-GW"
+	}
+	if gw.Hostname == "" {
+		gw.Hostname = "vyos-lab-gw"
+	}
+	if gw.Image == "" {
+		gw.Image = "vyos"
+	}
+	if gw.LANNetwork == "" {
+		gw.LANNetwork = or(ih.NetworkName, "ocp-lab")
+	}
+	if gw.LANCIDR == "" {
+		gw.LANCIDR = or(m.Spec.Network.MachineCIDR, "10.77.30.0/24")
+	}
+	if gw.LANIP == "" {
+		gw.LANIP = or(m.Spec.Network.Gateway, "10.77.30.1")
+	}
+	if gw.WANBridge == "" {
+		gw.WANBridge = "bridged-auto"
+	}
+	if gw.Phase == "" {
+		gw.Phase = "planned"
+	}
+	if gw.CPU == 0 {
+		gw.CPU = 2
+	}
+	if gw.MemoryMiB == 0 {
+		gw.MemoryMiB = 2048
+	}
+	if len(gw.Disks) == 0 {
+		if gw.DiskGiB == 0 {
+			gw.DiskGiB = 10
+		}
+		gw.Disks = []DiskSpec{{Name: "vda", SizeGiB: gw.DiskGiB, Bus: "virtio", Role: "system"}}
+	} else {
+		gw.DiskGiB = sumDiskGiB(gw.Disks)
+	}
+	if len(gw.NICs) == 0 {
+		gw.NICs = []NICSpec{
+			{Name: "eth0", Model: "virtio", Mode: "bridged", Network: gw.WANBridge, Role: "wan"},
+			{Name: "eth1", Model: "virtio", Mode: "libvirt-network", Network: gw.LANNetwork, Role: "lan"},
+		}
+	}
+	// Keep lab NetworkSpec aligned with gateway LAN when still on legacy defaults.
+	if m.Spec.Network.MachineCIDR == "" || m.Spec.Network.MachineCIDR == "192.168.130.0/24" {
+		m.Spec.Network.MachineCIDR = gw.LANCIDR
+		m.Spec.Network.Gateway = gw.LANIP
+		m.Spec.Network.DNS = gw.LANIP
 	}
 
 	h := &m.Spec.Hub
@@ -536,8 +653,8 @@ func (m *MockUp) AddCluster() ClusterNode {
 	c := newClusterNode(
 		index,
 		m.Spec.Hub.Version,
-		fmt.Sprintf("192.168.130.%d", apiOctet),
-		fmt.Sprintf("192.168.130.%d", ingOctet),
+		fmt.Sprintf("10.77.30.%d", apiOctet),
+		fmt.Sprintf("10.77.30.%d", ingOctet),
 	)
 	m.Spec.Clusters = append(m.Spec.Clusters, c)
 	if m.Layout.Nodes == nil {

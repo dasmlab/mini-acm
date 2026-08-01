@@ -8,7 +8,23 @@
 - MockUp UI: Topology + Wizard; multi DEPLOYMENT-CLUSTER; INFRA-HOST object
 - Prod GitOps on 2026-prod-1 (UI-as-a-service path)
 
-## Target user experience (RHEL-first)
+## Target MockUp object model
+
+```text
+MockUp (canvas)
+├── MACHINE-HOST     RHEL 9/10 where libvirtd runs (BM or nested). SSH e.g. 192.168.1.142
+│                    disks: system (OS/logs) + pool (guest images)
+│                    nics: bridged uplink + optional host-only (VMnet12 — future class move)
+├── VYOS-GW          Edge router VM on MACHINE-HOST
+│                    eth0 WAN = host bridge · eth1 LAN = libvirt net (obscure CIDR 10.77.30.0/24)
+│                    NAT/FW — installer later; object is inventory now
+├── MGMT-CLUSTER     SNO guest on LAN (governance OCP)
+├── ACM              Operators on MGMT-CLUSTER
+└── DEPLOYMENT-CLUSTER×N   Compact guest sets on LAN; ACM owns LC
+```
+
+Lab guests never sit on VMnet12; they sit on the VyOS LAN libvirt network.
+
 
 The “happy path” is **one subscribed RHEL 9/10 machine** (BM or nested-virt VM) that is both the **INFRA-HOST** and where mini-acm’s container runtime talks to libvirt:
 

@@ -18,7 +18,7 @@ func TestCreateDerive(t *testing.T) {
 	if m.Spec.Hub.Label != "MGMT-CLUSTER" {
 		t.Fatalf("hub label: %s", m.Spec.Hub.Label)
 	}
-	if m.Spec.InfraHost.Label != "INFRA-HOST" || m.Spec.InfraHost.ID == "" {
+	if m.Spec.InfraHost.Label != "MACHINE-HOST" || m.Spec.InfraHost.ID == "" {
 		t.Fatalf("infra host: %+v", m.Spec.InfraHost)
 	}
 	if m.Spec.InfraHost.Kind != "nested-vm" {
@@ -30,11 +30,17 @@ func TestCreateDerive(t *testing.T) {
 	if len(m.Spec.InfraHost.Disks) < 2 {
 		t.Fatalf("want multi-disk infra inventory, got %v", m.Spec.InfraHost.Disks)
 	}
-	if len(m.Spec.InfraHost.NICs) < 1 {
-		t.Fatalf("want at least one NIC, got %v", m.Spec.InfraHost.NICs)
+	if len(m.Spec.InfraHost.NICs) < 2 {
+		t.Fatalf("want bridged+host-only NICs, got %v", m.Spec.InfraHost.NICs)
 	}
 	if m.Spec.InfraHost.DiskGiB != 650 {
 		t.Fatalf("disk total want 650, got %d", m.Spec.InfraHost.DiskGiB)
+	}
+	if m.Spec.Gateway.Label != "VYOS-GW" || m.Spec.Gateway.LANCIDR != "10.77.30.0/24" {
+		t.Fatalf("gateway: %+v", m.Spec.Gateway)
+	}
+	if m.Spec.Network.MachineCIDR != "10.77.30.0/24" {
+		t.Fatalf("lab cidr: %s", m.Spec.Network.MachineCIDR)
 	}
 	if len(m.Spec.Clusters) != 2 {
 		t.Fatalf("want 2 default clusters, got %d", len(m.Spec.Clusters))
@@ -50,6 +56,9 @@ func TestCreateDerive(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(paths["infraHost"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(paths["gateway"]); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(paths["hub"]); err != nil {

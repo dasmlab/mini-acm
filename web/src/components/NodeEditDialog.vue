@@ -9,8 +9,9 @@
 
       <q-card-section v-if="kind === 'infraHost'">
         <q-banner dense rounded class="bg-blue-grey-1 text-blue-grey-10 q-mb-md">
-          Nested RHEL vHOST (or BM) that runs <strong>podman + libvirt</strong>.
-          Inventory disks/NICs here; guests inherit a simpler single-disk / single-NIC shape for MVP.
+          <strong>MACHINE-HOST</strong> — RHEL where libvirtd runs (BM or nested).
+          Bridged NIC = SSH/uplink; host-only (VMnet12) optional. Guest VMs + VyOS live on libvirt LAN behind VYOS-GW.
+          Large disk = pool for guests; small disk = OS/logs.
         </q-banner>
         <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
         <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
@@ -20,9 +21,10 @@
           outlined dense label="Outer hypervisor" class="q-mb-sm" />
         <q-select v-model="draft.os" :options="infraOS" outlined dense label="OS" class="q-mb-sm" />
         <q-input v-model="draft.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
-        <q-input v-model="draft.networkName" outlined dense label="Libvirt guest network" class="q-mb-sm" />
+        <q-input v-model="draft.networkName" outlined dense label="Lab libvirt net (behind VyOS)" class="q-mb-sm" />
         <q-input v-model="draft.storagePool" outlined dense label="Storage pool" class="q-mb-sm" />
-        <q-input v-model="draft.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm" />
+        <q-input v-model="draft.sshHost" outlined dense label="SSH endpoint" class="q-mb-sm"
+          hint="e.g. 192.168.1.142" />
         <q-toggle v-model="draft.podman" label="Podman available (UI / tooling)" class="q-mb-md" />
 
         <div class="text-subtitle2 q-mb-xs">Host capacity — vCPU: {{ draft.cpu }}</div>
@@ -47,15 +49,16 @@
         </div>
 
         <div class="row items-center q-mb-xs q-mt-md">
-          <div class="text-subtitle2">NICs ({{ (draft.nics || []).length }}) — MVP: usually one bridged</div>
+          <div class="text-subtitle2">NICs ({{ (draft.nics || []).length }})</div>
           <q-space />
           <q-btn flat dense size="sm" icon="add" label="NIC" @click="addNic" />
         </div>
         <div v-for="(n, i) in draft.nics || []" :key="'n'+i" class="row q-col-gutter-sm q-mb-sm items-center">
-          <div class="col-3"><q-input v-model="n.name" outlined dense label="Name" /></div>
+          <div class="col-2"><q-input v-model="n.name" outlined dense label="Name" /></div>
           <div class="col-2"><q-select v-model="n.model" :options="nicModels" outlined dense label="Model" /></div>
           <div class="col-3"><q-select v-model="n.mode" :options="nicModes" outlined dense label="Mode" /></div>
-          <div class="col-3"><q-input v-model="n.network" outlined dense label="Network/bridge" /></div>
+          <div class="col-2"><q-select v-model="n.role" :options="nicRoles" outlined dense label="Role" /></div>
+          <div class="col-2"><q-input v-model="n.network" outlined dense label="Net" /></div>
           <div class="col-1">
             <q-btn flat dense round icon="delete" size="sm" color="negative"
               :disable="(draft.nics || []).length <= 1" @click="draft.nics.splice(i, 1)" />
@@ -63,6 +66,32 @@
         </div>
 
         <q-input v-model="draft.acmReference" outlined dense type="textarea" autogrow label="ACM CRD reference note" class="q-mb-sm q-mt-md" />
+        <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
+      </q-card-section>
+
+      <q-card-section v-else-if="kind === 'gateway'">
+        <q-banner dense rounded class="bg-orange-1 text-orange-10 q-mb-md">
+          <strong>VYOS-GW</strong> — edge router VM on MACHINE-HOST.
+          eth0 = WAN (bridged), eth1 = LAN (libvirt <code>ocp-lab</code> / obscure private CIDR).
+          Hub + deployment guests sit on LAN; NAT/FW later (installer TBD).
+        </q-banner>
+        <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
+        <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
+        <q-input v-model="draft.image" outlined dense label="Image" class="q-mb-sm" hint="vyos" />
+        <q-input v-model="draft.isoPath" outlined dense label="ISO path (MVP gap)" class="q-mb-sm" />
+        <q-select v-model="draft.phase" :options="gwPhases" outlined dense label="Phase" class="q-mb-sm" />
+        <q-input v-model="draft.wanBridge" outlined dense label="WAN bridge" class="q-mb-sm" />
+        <q-input v-model="draft.lanNetwork" outlined dense label="LAN libvirt network" class="q-mb-sm" />
+        <q-input v-model="draft.lanCIDR" outlined dense label="LAN CIDR" class="q-mb-sm" />
+        <q-input v-model="draft.lanIP" outlined dense label="LAN IP (gateway)" class="q-mb-sm" />
+        <q-toggle v-model="draft.nat" label="NAT WAN↔LAN" class="q-mb-sm" />
+        <q-toggle v-model="draft.firewall" label="Firewall" class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">vCPU: {{ draft.cpu }}</div>
+        <q-slider v-model="draft.cpu" :min="1" :max="4" :step="1" label class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">RAM: {{ draft.memoryMiB }} MiB</div>
+        <q-slider v-model="draft.memoryMiB" :min="1024" :max="8192" :step="512" label class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">Disk: {{ draft.diskGiB }} GiB</div>
+        <q-slider v-model="draft.diskGiB" :min="4" :max="40" :step="1" label class="q-mb-md" />
         <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
       </q-card-section>
 
@@ -153,10 +182,13 @@ const hypervisors = ['vmware', 'kvm', 'none']
 const diskBuses = ['nvme', 'virtio', 'sata']
 const diskRoles = ['system', 'data', 'pool']
 const nicModels = ['virtio', 'e1000e']
-const nicModes = ['bridged', 'nat', 'isolated', 'libvirt-network']
+const nicModes = ['bridged', 'host-only', 'nat', 'isolated', 'libvirt-network']
+const nicRoles = ['uplink', 'host-only', 'wan', 'lan', 'guest']
+const gwPhases = ['planned', 'booted', 'configured']
 
 const title = computed(() => {
-  if (props.kind === 'infraHost') return 'Edit INFRA-HOST'
+  if (props.kind === 'infraHost') return 'Edit MACHINE-HOST'
+  if (props.kind === 'gateway') return 'Edit VYOS-GW'
   if (props.kind === 'hub') return 'Edit MGMT-CLUSTER'
   if (props.kind === 'acm') return 'Edit ACM'
   return 'Edit DEPLOYMENT-CLUSTER'
@@ -186,7 +218,10 @@ function addDisk() {
 
 function addNic() {
   if (!draft.nics) draft.nics = []
-  draft.nics.push({ name: `eth${draft.nics.length}`, model: 'virtio', mode: 'bridged', network: 'bridged-auto' })
+  draft.nics.push({
+    name: `eth${draft.nics.length}`, model: 'virtio', mode: 'bridged',
+    network: 'bridged-auto', role: 'uplink',
+  })
 }
 
 function syncGuestDisk(size) {
@@ -232,6 +267,9 @@ function onVersion(v) {
 function save() {
   if (props.kind === 'infraHost') {
     draft.diskGiB = diskTotal.value
+  }
+  if (props.kind === 'gateway' && draft.disks?.length) {
+    draft.disks[0].sizeGiB = draft.diskGiB
   }
   emit('save', { kind: props.kind, node: { ...draft } })
   emit('update:modelValue', false)
