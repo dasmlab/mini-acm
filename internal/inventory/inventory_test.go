@@ -22,6 +22,19 @@ func TestEnsureSeedAndList(t *testing.T) {
 	if list[0].SSHHost != "192.168.1.142" || list[0].SSHUser != "dasm" || !list[0].Seed {
 		t.Fatalf("bad seed: %+v", list[0])
 	}
+	if list[0].StretchedHost != "10.50.0.3" {
+		t.Fatalf("want stretchedHost 10.50.0.3, got %q", list[0].StretchedHost)
+	}
+	if list[0].Stretched {
+		t.Fatal("seed should default stretched=false (LAN); toggle on for cluster/VPN path")
+	}
+	if list[0].EffectiveSSHHost() != "192.168.1.142" {
+		t.Fatalf("effective host: %s", list[0].EffectiveSSHHost())
+	}
+	list[0].Stretched = true
+	if list[0].EffectiveSSHHost() != "10.50.0.3" {
+		t.Fatalf("stretched effective host: %s", list[0].EffectiveSSHHost())
+	}
 	// second NewStore should not duplicate
 	s2, err := NewStore(dir)
 	if err != nil {

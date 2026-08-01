@@ -24,10 +24,14 @@ type MachineHost struct {
 	ID             string            `json:"id" yaml:"id"`
 	Name           string            `json:"name" yaml:"name"`
 	SSHUser        string            `json:"sshUser" yaml:"sshUser"`
-	SSHHost        string            `json:"sshHost" yaml:"sshHost"`
+	SSHHost        string            `json:"sshHost" yaml:"sshHost"` // local / LAN address
 	SSHPort        int               `json:"sshPort,omitempty" yaml:"sshPort,omitempty"`
 	IdentityFile   string            `json:"identityFile,omitempty" yaml:"identityFile,omitempty"` // private key path — never key material
 	Notes          string            `json:"notes,omitempty" yaml:"notes,omitempty"`
+	// Stretched: probe/fix via StretchedHost (e.g. WireGuard VPN) when the cluster
+	// cannot reach the LAN address — optional boundary-crossing path, not a full VPN installer.
+	Stretched      bool              `json:"stretched,omitempty" yaml:"stretched,omitempty"`
+	StretchedHost  string            `json:"stretchedHost,omitempty" yaml:"stretchedHost,omitempty"`
 	Seed           bool              `json:"seed,omitempty" yaml:"seed,omitempty"`
 	Status         string            `json:"status" yaml:"status"`
 	StatusMessage  string            `json:"statusMessage,omitempty" yaml:"statusMessage,omitempty"`
@@ -40,12 +44,14 @@ type MachineHost struct {
 
 // CreateReq creates a new inventory entry.
 type CreateReq struct {
-	Name         string `json:"name"`
-	SSHUser      string `json:"sshUser"`
-	SSHHost      string `json:"sshHost"`
-	SSHPort      int    `json:"sshPort"`
-	IdentityFile string `json:"identityFile"`
-	Notes        string `json:"notes"`
+	Name          string `json:"name"`
+	SSHUser       string `json:"sshUser"`
+	SSHHost       string `json:"sshHost"`
+	SSHPort       int    `json:"sshPort"`
+	IdentityFile  string `json:"identityFile"`
+	Notes         string `json:"notes"`
+	Stretched     bool   `json:"stretched"`
+	StretchedHost string `json:"stretchedHost"`
 }
 
 // ProbeResult is the outcome of an SSH (+ libvirt / podman) smoke check.
@@ -84,30 +90,42 @@ func (s *Store) path(id string) string {
 	return filepath.Join(s.root, id+".yaml")
 }
 
+const (
+	seedLANIP = "192.168.1.142"
+	seedVPNIP = "10.50.0.3" // WireGuard client on lab RHEL10 — use via Stretched toggle from cluster
+)
+
 func (s *Store) ensureSeed() error {
 	list, err := s.List()
 	if err != nil {
 		return err
 	}
 	for _, h := range list {
-		if h.Seed || h.SSHHost == "192.168.1.142" {
+		if h.Seed || h.SSHHost == seedLANIP {
+			// Backfill stretched VPN address on existing seed without flipping the toggle.
+			if h.StretchedHost == "" && (h.Seed || h.SSHHost == seedLANIP) {
+				h.StretchedHost = seedVPNIP
+				_ = s.save(h)
+			}
 			return nil
 		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	seed := &MachineHost{
-		ID:           uuid.NewString(),
-		Name:         "lab-rhel10-seed",
-		SSHUser:      "dasm",
-		SSHHost:      "192.168.1.142",
-		SSHPort:      22,
-		IdentityFile: defaultIdentityHint(),
-		Notes:        "SEED — RHEL 10 MACHINE-HOST for libvirt orchestration. SSH key exchange expected (dev box id_ecdsa).",
-		Seed:         true,
-		Status:       StatusUnknown,
+		ID:            uuid.NewString(),
+		Name:          "lab-rhel10-seed",
+		SSHUser:       "dasm",
+		SSHHost:       seedLANIP,
+		SSHPort:       22,
+		IdentityFile:  defaultIdentityHint(),
+		Stretched:     false,
+		StretchedHost: seedVPNIP,
+		Notes:         "SEED — RHEL 10 MACHINE-HOST. LAN " + seedLANIP + "; optional stretched VPN " + seedVPNIP + " (toggle when cluster cannot reach LAN).",
+		Seed:          true,
+		Status:        StatusUnknown,
 		StatusMessage: "not probed yet",
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	return s.save(seed)
 }
@@ -186,6 +204,8 @@ func (s *Store) Create(req CreateReq) (*MachineHost, error) {
 		SSHPort:       req.SSHPort,
 		IdentityFile:  req.IdentityFile,
 		Notes:         req.Notes,
+		Stretched:     req.Stretched,
+		StretchedHost: strings.TrimSpace(req.StretchedHost),
 		Status:        StatusUnknown,
 		StatusMessage: "not probed yet",
 		CreatedAt:     now,
@@ -238,7 +258,15 @@ func normalizeHost(h *MachineHost) {
 	}
 }
 
-// Endpoint returns user@host for display.
+// EffectiveSSHHost is the address Probe/Fix dial — stretched VPN when toggled on.
+func (h *MachineHost) EffectiveSSHHost() string {
+	if h.Stretched && strings.TrimSpace(h.StretchedHost) != "" {
+		return strings.TrimSpace(h.StretchedHost)
+	}
+	return h.SSHHost
+}
+
+// Endpoint returns user@effective-host for display / error messages.
 func (h *MachineHost) Endpoint() string {
-	return fmt.Sprintf("%s@%s", h.SSHUser, h.SSHHost)
+	return fmt.Sprintf("%s@%s", h.SSHUser, h.EffectiveSSHHost())
 }

@@ -33,8 +33,12 @@
             <q-badge :color="statusColor(h.status)" class="q-ml-sm">{{ statusLabel(h.status) }}</q-badge>
           </q-item-label>
           <q-item-label caption>
-            {{ h.sshUser }}@{{ h.sshHost }}:{{ h.sshPort || 22 }}
+            {{ h.sshUser }}@{{ effectiveHost(h) }}:{{ h.sshPort || 22 }}
+            <q-badge v-if="h.stretched" color="deep-purple" outline dense class="q-ml-xs">stretched</q-badge>
             <span v-if="h.identityFile"> · key {{ h.identityFile }}</span>
+          </q-item-label>
+          <q-item-label caption v-if="h.stretched && h.sshHost" class="text-grey-6">
+            LAN {{ h.sshHost }} · via VPN {{ h.stretchedHost }}
           </q-item-label>
           <q-item-label caption v-if="h.statusMessage" class="q-mt-xs">{{ h.statusMessage }}</q-item-label>
           <div v-if="h.issues?.length" class="q-mt-sm">
@@ -65,6 +69,18 @@
               :loading="fixing === h.id"
               @click="openFix(h)"
             />
+            <q-btn
+              flat dense
+              :color="h.stretched ? 'deep-purple' : 'grey-8'"
+              :icon="h.stretched ? 'vpn_lock' : 'vpn_key_off'"
+              :label="h.stretched ? 'Stretched on' : 'Stretched'"
+              :loading="toggling === h.id"
+              @click="onToggleStretched(h)"
+            >
+              <q-tooltip>
+                Cross a network boundary via VPN IP (e.g. WireGuard). LAN stays on file; probe/fix use stretched host when on.
+              </q-tooltip>
+            </q-btn>
             <q-btn flat dense color="grey-8" icon="edit" label="Edit" @click="openEdit(h)" />
             <q-btn
               flat dense color="negative" icon="delete" label="Remove"
@@ -83,7 +99,9 @@
       <template #avatar><q-icon name="info" color="primary" /></template>
       Assume the host is subscribed and your SSH user can sudo (password optional in Fix).
       Fix installs <code>libvirt</code> / <code>podman</code> on target via SSH — foundation for a later EE/runner agent container.
-      As-a-service probes need LAN reachability + mounted identity (<code>INVENTORY_SSH_KEY</code>).
+      As-a-service probes need reachability + mounted identity (<code>INVENTORY_SSH_KEY</code>).
+      Use <b>Stretched</b> when the cluster sits behind a boundary and must hit the host’s VPN address
+      (WireGuard install on the MACHINE-HOST is a separate stretch step — not automated here yet).
     </q-banner>
 
     <q-dialog v-model="formOpen" persistent>
@@ -94,8 +112,20 @@
         <q-card-section class="q-pt-none">
           <q-input v-model="form.name" outlined dense label="Name" class="q-mb-sm" />
           <q-input v-model="form.sshUser" outlined dense label="SSH user" class="q-mb-sm" />
-          <q-input v-model="form.sshHost" outlined dense label="SSH host / IP" class="q-mb-sm"
-            hint="e.g. 192.168.1.142 — keys already exchanged" />
+          <q-input v-model="form.sshHost" outlined dense label="SSH host / IP (LAN)" class="q-mb-sm"
+            hint="e.g. 192.168.1.142 — used when Stretched is off" />
+          <q-toggle v-model="form.stretched" color="deep-purple" label="Stretched (VPN reachability)"
+            class="q-mb-xs" />
+          <div class="text-caption text-grey-6 q-mb-sm">
+            When the cluster cannot reach LAN — probe via WireGuard / VPN address instead.
+          </div>
+          <q-input
+            v-model="form.stretchedHost"
+            outlined dense
+            label="Stretched host / VPN IP"
+            class="q-mb-sm"
+            hint="e.g. 10.50.0.3 — optional until you need the boundary-crossing path"
+          />
           <q-input v-model.number="form.sshPort" type="number" outlined dense label="SSH port" class="q-mb-sm" />
           <q-input v-model="form.identityFile" outlined dense label="Identity file (private key path)" class="q-mb-sm"
             hint="~/.ssh/id_ecdsa or INVENTORY_SSH_KEY" />
@@ -161,6 +191,7 @@ const loading = ref(true)
 const saving = ref(false)
 const probing = ref(null)
 const fixing = ref(null)
+const toggling = ref(null)
 const hosts = ref([])
 const formOpen = ref(false)
 const editing = ref(null)
@@ -197,7 +228,14 @@ function emptyForm() {
     sshPort: 22,
     identityFile: '~/.ssh/id_ecdsa',
     notes: '',
+    stretched: false,
+    stretchedHost: '',
   }
+}
+
+function effectiveHost(h) {
+  if (h.stretched && h.stretchedHost) return h.stretchedHost
+  return h.sshHost
 }
 
 function statusColor(s) {
@@ -249,8 +287,37 @@ function openEdit(h) {
     sshPort: h.sshPort || 22,
     identityFile: h.identityFile || '',
     notes: h.notes || '',
+    stretched: !!h.stretched,
+    stretchedHost: h.stretchedHost || '',
   }
   formOpen.value = true
+}
+
+async function onToggleStretched(h) {
+  if (!h.stretched && !h.stretchedHost) {
+    Notify.create({
+      type: 'warning',
+      message: 'Set a stretched / VPN IP in Edit first (e.g. 10.50.0.3).',
+    })
+    openEdit(h)
+    form.value.stretched = true
+    return
+  }
+  toggling.value = h.id
+  try {
+    await updateInventory(h.id, { ...h, stretched: !h.stretched })
+    Notify.create({
+      type: 'positive',
+      message: !h.stretched
+        ? `Stretched on — probe via ${h.stretchedHost}`
+        : `Stretched off — probe via LAN ${h.sshHost}`,
+    })
+    await load()
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    toggling.value = null
+  }
 }
 
 function openFix(h) {

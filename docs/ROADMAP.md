@@ -137,7 +137,7 @@ Go `provider/libvirt` remains useful as a thin driver *or* as what playbooks wra
 
 ## Next (near-term)
 
-0. **Inventory (MACHINE-HOST targets)** — DONE MVP: seed `dasm@192.168.1.142`, CRUD, SSH probe (auth + libvirt readiness). **Probe status:** red unreachable / yellow partial / green ready. **Fix this** remediates over SSH (install/start libvirt, install podman; optional sudo password). Orchestrate/deploy against a plan is next.
+0. **Inventory (MACHINE-HOST targets)** — DONE MVP: seed `dasm@192.168.1.142`, CRUD, SSH probe (auth + libvirt readiness). **Probe status:** red unreachable / yellow partial / green ready. **Fix this** remediates over SSH (install/start libvirt, install podman; optional sudo password). **Stretched toggle:** keep LAN IP on file; optional VPN address (seed `10.50.0.3`) for cluster→host when LAN is not routable — WireGuard install on the host is a manual/stretch step, not a full product feature yet. Orchestrate/deploy against a plan is next.
 0b. **MockUp genres/styles** — DONE: genre/style catalog; **ACM Multi-Cluster** (first working miniMock) + **Single SNO OCP**. Product rename **mini-acm → mini-mock**. Next: Windows/Web/Infra seed stubs; Validate from relation catalog; Add Genre YAML.
 0c. **EE / runner agent on target** — after podman Fix: pull slim Ansible EE image (SSH key injected from UI), run as host agent or cluster job for probe/orchestrate. Same image path as later AAP/EDA.
 0d. **Keycloak SSO** — DONE code (dasmlab realm, client `mini-mock`). Create Keycloak client + optional K8s secret `mini-mock-oidc` to enable in prod — see `docs/KEYCLOAK_SETUP.md`.

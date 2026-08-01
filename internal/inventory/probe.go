@@ -57,10 +57,22 @@ func probeHost(h *MachineHost) *ProbeResult {
 		Issues:    []ProbeIssue{},
 		CheckedAt: now,
 	}
-	addr := fmt.Sprintf("%s:%d", h.SSHHost, h.SSHPort)
+	host := h.EffectiveSSHHost()
+	addr := fmt.Sprintf("%s:%d", host, h.SSHPort)
+	if h.Stretched {
+		res.Facts["reachability"] = "stretched"
+		res.Facts["stretchedHost"] = host
+		res.Facts["lanHost"] = h.SSHHost
+	} else {
+		res.Facts["reachability"] = "lan"
+	}
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		res.Message = fmt.Sprintf("TCP connect failed to %s: %v", addr, err)
+		hint := ""
+		if !h.Stretched && strings.TrimSpace(h.StretchedHost) != "" {
+			hint = fmt.Sprintf(" (LAN unreachable from here — try Stretched VPN toggle → %s)", h.StretchedHost)
+		}
+		res.Message = fmt.Sprintf("TCP connect failed to %s: %v%s", addr, err, hint)
 		res.Issues = append(res.Issues, ProbeIssue{
 			ID: "tcp-unreachable", Severity: "error",
 			Message: res.Message, Fixable: false,
