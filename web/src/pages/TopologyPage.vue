@@ -10,19 +10,29 @@
       </div>
 
       <q-btn-dropdown outline color="primary" icon="add" label="Add" class="q-mr-sm">
-        <q-list style="min-width: 280px">
+        <q-list style="min-width: 300px">
+          <q-item-label header>Cluster layer</q-item-label>
           <q-item clickable v-close-popup @click="onAddCluster">
             <q-item-section avatar><q-icon name="developer_board" color="primary" /></q-item-section>
             <q-item-section>
               <q-item-label>Deployment cluster (v)Host</q-item-label>
-              <q-item-label caption>Managed by ACM · adds compact guest set</q-item-label>
+              <q-item-label caption>OCP guests · managed by ACM</q-item-label>
+            </q-item-section>
+          </q-item>
+          <q-separator />
+          <q-item-label header>Application layer</q-item-label>
+          <q-item disable>
+            <q-item-section avatar><q-icon name="extension" color="grey" /></q-item-section>
+            <q-item-section>
+              <q-item-label>Test / app payload</q-item-label>
+              <q-item-label caption>Coming later — ACM is the only payload today</q-item-label>
             </q-item-section>
           </q-item>
           <q-separator />
           <q-item dense>
             <q-item-section>
               <q-item-label caption>
-                Machine host, VyOS gateway, and mgmt cluster are singletons — select them on the canvas to edit.
+                Infra singletons (machine host, adapter, VyOS, mgmt) ship with the MockUp — select on canvas to edit.
               </q-item-label>
             </q-item-section>
           </q-item>
@@ -33,12 +43,27 @@
 
     <div v-if="loading" class="row justify-center q-my-xl"><q-spinner size="3em" color="primary" /></div>
     <template v-else-if="mockup">
+      <div class="layer-bar q-mb-sm">
+        <button
+          v-for="opt in layerOptions"
+          :key="opt.id"
+          type="button"
+          class="layer-tab"
+          :class="{ active: layer === opt.id }"
+          @click="layer = opt.id"
+        >
+          <span class="layer-tab-title">{{ opt.title }}</span>
+          <span class="layer-tab-sub">{{ opt.sub }}</span>
+        </button>
+      </div>
+
       <div class="legend q-mb-md">
-        <span class="legend-item"><i class="swatch swatch-host" /> Machine host</span>
+        <span class="legend-item"><i class="swatch swatch-host" /> Host / adapter</span>
         <span class="legend-item"><i class="swatch swatch-gw" /> Gateway</span>
-        <span class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt (runs ACM)</span>
-        <span class="legend-item"><i class="swatch swatch-dep" /> Deployment (managed)</span>
-        <span class="legend-hint">Drag to arrange · click to inspect · Edit for full form</span>
+        <span class="legend-item"><i class="swatch swatch-mgmt" /> Mgmt OCP</span>
+        <span class="legend-item"><i class="swatch swatch-dep" /> Deployment OCP</span>
+        <span class="legend-item"><i class="swatch swatch-acm" /> ACM payload</span>
+        <span class="legend-hint">{{ layerHint }}</span>
       </div>
 
       <div class="row q-col-gutter-lg">
@@ -46,6 +71,7 @@
           <TopologyCanvas
             :mockup="mockup"
             :selected-id="selected?.id"
+            :layer="layer"
             @select="onSelect"
             @move="onMove"
           />
@@ -88,7 +114,10 @@
               </dl>
 
               <div class="inspector-actions">
-                <q-btn color="primary" unelevated label="Edit details" icon="edit" @click="openEditor" />
+                <q-btn
+                  v-if="selectedMeta.editable !== false"
+                  color="primary" unelevated label="Edit details" icon="edit" @click="openEditor"
+                />
                 <q-btn
                   v-if="selected.kind === 'cluster' && mockup.spec.clusters.length > 1"
                   flat color="negative" label="Remove" icon="delete"
@@ -163,12 +192,28 @@ const selected = ref(null)
 const editOpen = ref(false)
 const editKind = ref('hub')
 const editNode = ref(null)
+const layer = ref('all')
 let layoutTimer = null
+
+const layerOptions = [
+  { id: 'all', title: 'All layers', sub: 'Full rack' },
+  { id: 'infra', title: 'Infra / net', sub: 'Host · adapter · GW' },
+  { id: 'cluster', title: 'Cluster', sub: 'OCP vHosts' },
+  { id: 'app', title: 'Application', sub: 'ACM payload' },
+]
+
+const layerHint = computed(() => {
+  if (layer.value === 'infra') return 'HW + network + IaaS adapter (libvirt today)'
+  if (layer.value === 'cluster') return 'OCP guests — mgmt runs ACM; deployments are managed'
+  if (layer.value === 'app') return 'Payload on mgmt — ACM only for now'
+  return 'Drag · click to inspect · Edit for full form'
+})
 
 const objectSummary = computed(() => {
   if (!mockup.value) return ''
   const n = mockup.value.spec.clusters?.length || 0
-  return `1 machine host · 1 gateway · 1 mgmt · ${n} deployment`
+  const p = mockup.value.spec.provider || 'libvirt'
+  return `adapter ${p} · 1 host · 1 gw · 1 mgmt · ${n} deployment`
 })
 
 const objectRows = computed(() => {
@@ -178,46 +223,60 @@ const objectRows = computed(() => {
   const ih = m.spec.infraHost
   if (ih?.id) {
     rows.push({
-      id: ih.id, kind: 'infraHost',
+      id: ih.id, kind: 'infraHost', layer: 'infra',
       title: ih.label || 'MACHINE-HOST',
-      sub: 'Host machine · libvirtd',
+      sub: 'Infra · HW host',
     })
   }
+  rows.push({
+    id: 'adapter', kind: 'adapter', layer: 'infra',
+    title: 'ADAPTER',
+    sub: `Infra · ${m.spec.provider || 'libvirt'} IaaS`,
+  })
   const gw = m.spec.gateway
   if (gw?.id) {
     rows.push({
-      id: gw.id, kind: 'gateway',
+      id: gw.id, kind: 'gateway', layer: 'infra',
       title: gw.label || 'VYOS-GW',
-      sub: 'Edge · WAN/LAN',
+      sub: 'Infra · edge net',
     })
   }
   if (m.spec.hub?.id) {
     rows.push({
-      id: m.spec.hub.id, kind: 'hub',
+      id: m.spec.hub.id, kind: 'hub', layer: 'cluster',
       title: m.spec.hub.label || 'MGMT-CLUSTER',
-      sub: 'Mgmt (v)Host · runs ACM',
-    })
-  }
-  if (m.spec.acm?.id) {
-    rows.push({
-      id: m.spec.acm.id, kind: 'acm',
-      title: m.spec.acm.label || 'ACM',
-      sub: m.spec.acm.enabled ? 'Governs deployments' : 'Disabled',
+      sub: 'Cluster · runs ACM',
     })
   }
   for (const c of m.spec.clusters || []) {
     rows.push({
-      id: c.id, kind: 'cluster',
+      id: c.id, kind: 'cluster', layer: 'cluster',
       title: c.label || c.name,
-      sub: `Deployment (v)Host · managed · ${c.phase || 'planned'}`,
+      sub: `Cluster · managed · ${c.phase || 'planned'}`,
     })
   }
-  return rows
+  if (m.spec.acm?.id) {
+    rows.push({
+      id: m.spec.acm.id, kind: 'acm', layer: 'app',
+      title: m.spec.acm.label || 'ACM',
+      sub: m.spec.acm.enabled ? 'App · payload / governs' : 'App · disabled',
+    })
+  }
+  if (layer.value === 'all') return rows
+  return rows.filter((r) => r.layer === layer.value)
 })
 
 const selectedNodeData = computed(() => {
   if (!selected.value || !mockup.value) return null
   const k = selected.value.kind
+  if (k === 'adapter') {
+    return {
+      id: 'adapter',
+      provider: mockup.value.spec.provider || 'libvirt',
+      mode: 'local',
+      notes: 'mini-acm (podman) talks to this IaaS adapter — local libvirt today; remote/Azure Spot later.',
+    }
+  }
   if (k === 'infraHost') return mockup.value.spec.infraHost
   if (k === 'gateway') return mockup.value.spec.gateway
   if (k === 'hub') return mockup.value.spec.hub
@@ -229,14 +288,29 @@ const selectedMeta = computed(() => {
   const n = selected.value
   const d = selectedNodeData.value
   if (!n || !d) {
-    return { classLabel: '', title: '', roleLine: '', acmLine: '', facts: [] }
+    return { classLabel: '', title: '', roleLine: '', acmLine: '', facts: [], editable: true }
+  }
+  if (n.kind === 'adapter') {
+    return {
+      classLabel: 'IaaS adapter',
+      title: 'ADAPTER',
+      roleLine: 'Role: provision VMs via provider plugin',
+      acmLine: 'Layer: infra — not an OCP/ACM object',
+      editable: false,
+      facts: [
+        { k: 'Type', v: d.provider },
+        { k: 'Mode', v: d.mode },
+        { k: 'Note', v: d.notes },
+      ],
+    }
   }
   if (n.kind === 'infraHost') {
     return {
       classLabel: 'Host machine',
       title: d.label || 'MACHINE-HOST',
-      roleLine: 'Role: libvirt / podman host (not an OCP node)',
-      acmLine: 'ACM: n/a — provides compute for guests',
+      roleLine: 'Role: HW (or nested) node running libvirtd / podman',
+      acmLine: 'Layer: infra',
+      editable: true,
       facts: [
         { k: 'SSH', v: d.sshHost || '—' },
         { k: 'OS', v: `${d.os || '—'} · ${d.kind || '—'}` },
@@ -250,13 +324,13 @@ const selectedMeta = computed(() => {
     return {
       classLabel: 'Edge gateway',
       title: d.label || 'VYOS-GW',
-      roleLine: 'Role: NAT / firewall between bridge WAN and lab LAN',
-      acmLine: 'ACM: n/a — lab edge router',
+      roleLine: 'Role: NAT / firewall WAN↔lab LAN',
+      acmLine: 'Layer: infra / network',
+      editable: true,
       facts: [
         { k: 'LAN', v: `${d.lanCIDR || '—'} · ${d.lanIP || ''}` },
         { k: 'WAN', v: d.wanBridge || 'bridged' },
         { k: 'Phase', v: d.phase || 'planned' },
-        { k: 'Size', v: `${d.cpu}c / ${d.memoryMiB}MiB` },
       ],
     }
   }
@@ -264,39 +338,39 @@ const selectedMeta = computed(() => {
     return {
       classLabel: 'Cluster (v)Host',
       title: d.label || 'MGMT-CLUSTER',
-      roleLine: 'Role: Management cluster guest',
-      acmLine: 'ACM: runs ACM (governance hub)',
+      roleLine: 'Role: Management OCP guest',
+      acmLine: 'Layer: cluster · runs ACM payload',
+      editable: true,
       facts: [
         { k: 'Hostname', v: d.hostname || '—' },
         { k: 'Profile', v: `${d.profile || '—'} · OCP ${d.version || '—'}` },
         { k: 'Size', v: `${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G / ${d.diskGiB}G` },
-        { k: 'IP', v: d.ip || '—' },
       ],
     }
   }
   if (n.kind === 'acm') {
     return {
-      classLabel: 'Operator',
+      classLabel: 'Application payload',
       title: d.label || 'ACM',
-      roleLine: 'Role: MultiClusterHub on management cluster',
-      acmLine: d.enabled ? 'ACM: enabled — manages deployment clusters' : 'ACM: disabled',
+      roleLine: 'Role: MultiClusterHub on mgmt cluster',
+      acmLine: d.enabled ? 'Governs deployment cluster LCs' : 'Disabled',
+      editable: true,
       facts: [
         { k: 'MCE', v: d.mceChannel || '—' },
         { k: 'ACM', v: d.acmChannel || '—' },
       ],
     }
   }
-  // cluster
   return {
     classLabel: 'Cluster (v)Host',
     title: d.label || d.name,
-    roleLine: 'Role: Deployment cluster guest set',
-    acmLine: 'ACM: managed by hub ACM',
+    roleLine: 'Role: Deployment OCP guest set',
+    acmLine: 'Layer: cluster · managed by ACM',
+    editable: true,
     facts: [
       { k: 'Name', v: d.name || '—' },
       { k: 'Phase', v: d.phase || 'planned' },
       { k: 'Nodes', v: `${d.count}× ${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G` },
-      { k: 'ImageSet', v: d.clusterImageSet || '—' },
       { k: 'API VIP', v: d.apiVIP || '—' },
     ],
   }
@@ -323,7 +397,7 @@ function selectById(id, kind) {
 
 function openEditor() {
   const d = selectedNodeData.value
-  if (!d || !selected.value) return
+  if (!d || !selected.value || selected.value.kind === 'adapter') return
   editKind.value = selected.value.kind
   editNode.value = { ...d }
   editOpen.value = true
@@ -451,6 +525,43 @@ onMounted(load)
 .swatch-gw { background: #e65100; }
 .swatch-mgmt { background: #1a237e; }
 .swatch-dep { background: #1565c0; }
+.swatch-acm { background: #00838f; }
+
+.layer-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+@media (max-width: 900px) {
+  .layer-bar { grid-template-columns: 1fr 1fr; }
+}
+.layer-tab {
+  text-align: left;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+}
+.layer-tab:hover { border-color: #90caf9; }
+.layer-tab.active {
+  border-color: #1565c0;
+  background: #e3f2fd;
+}
+.layer-tab-title {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #263238;
+}
+.layer-tab-sub {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  color: #90a4ae;
+}
+
+.dot-adapter { background: #546e7a; }
 
 .inspector {
   border: 1px solid #e0e0e0;
