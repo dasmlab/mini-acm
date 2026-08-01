@@ -71,6 +71,7 @@ func (s *Server) routes() chi.Router {
 		r.Get("/inventory/{id}", s.getInventory)
 		r.Put("/inventory/{id}", s.putInventory)
 		r.Post("/inventory/{id}/probe", s.probeInventory)
+		r.Post("/inventory/{id}/fix", s.fixInventory)
 		r.Delete("/inventory/{id}", s.deleteInventory)
 	})
 
@@ -347,6 +348,28 @@ func (s *Server) probeInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) fixInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req inventory.FixReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && r.ContentLength != 0 {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	res, err := s.inventory.Fix(chi.URLParam(r, "id"), req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	code := http.StatusOK
+	if !res.OK {
+		code = http.StatusOK // still 200 with ok:false — UI shows log
+	}
+	writeJSON(w, code, res)
 }
 
 func (s *Server) deleteInventory(w http.ResponseWriter, r *http.Request) {

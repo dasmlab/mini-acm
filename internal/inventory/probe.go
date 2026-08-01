@@ -12,39 +12,59 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// ProbeIssue is a structured finding from probe (drives Fix this in UI).
+type ProbeIssue struct {
+	ID        string `json:"id" yaml:"id"`
+	Severity  string `json:"severity" yaml:"severity"` // error | warn
+	Message   string `json:"message" yaml:"message"`
+	Fixable   bool   `json:"fixable" yaml:"fixable"`
+	FixAction string `json:"fixAction,omitempty" yaml:"fixAction,omitempty"`
+}
+
 // Probe connects over SSH and smoke-checks readiness for orchestration.
+// Status: unreachable (red) | partial (yellow) | reachable/ready (green).
 func (s *Store) Probe(id string) (*ProbeResult, error) {
 	h, err := s.Get(id)
 	if err != nil {
 		return nil, err
 	}
 	res := probeHost(h)
-	h.LastProbedAt = res.CheckedAt
-	h.Facts = res.Facts
-	h.StatusMessage = res.Message
-	switch {
-	case res.Orchestration:
-		h.Status = StatusReachable
-	case res.AuthOK:
-		h.Status = StatusPartial
-	default:
-		h.Status = StatusUnreachable
-	}
+	applyProbeToHost(h, res)
 	_ = s.Save(h)
 	res.Host = h
 	return res, nil
+}
+
+func applyProbeToHost(h *MachineHost, res *ProbeResult) {
+	h.LastProbedAt = res.CheckedAt
+	h.Facts = res.Facts
+	h.StatusMessage = res.Message
+	h.Issues = res.Issues
+	switch {
+	case res.AuthOK && res.LibvirtReady:
+		h.Status = StatusReachable // green — ready to orchestrate
+	case res.AuthOK:
+		h.Status = StatusPartial // yellow — SSH OK, missing libs / services
+	default:
+		h.Status = StatusUnreachable // red — no TCP or SSH auth
+	}
 }
 
 func probeHost(h *MachineHost) *ProbeResult {
 	now := time.Now().UTC().Format(time.RFC3339)
 	res := &ProbeResult{
 		Facts:     map[string]string{},
+		Issues:    []ProbeIssue{},
 		CheckedAt: now,
 	}
 	addr := fmt.Sprintf("%s:%d", h.SSHHost, h.SSHPort)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		res.Message = fmt.Sprintf("TCP connect failed to %s: %v", addr, err)
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "tcp-unreachable", Severity: "error",
+			Message: res.Message, Fixable: false,
+		})
 		return res
 	}
 	_ = conn.Close()
@@ -53,6 +73,10 @@ func probeHost(h *MachineHost) *ProbeResult {
 	keyPath, key, err := loadIdentity(h.IdentityFile)
 	if err != nil {
 		res.Message = fmt.Sprintf("host reachable but no SSH identity: %v", err)
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "no-identity", Severity: "error",
+			Message: res.Message, Fixable: false,
+		})
 		return res
 	}
 	res.Facts["identityFile"] = keyPath
@@ -60,6 +84,10 @@ func probeHost(h *MachineHost) *ProbeResult {
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		res.Message = fmt.Sprintf("invalid private key %s: %v", keyPath, err)
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "bad-identity", Severity: "error",
+			Message: res.Message, Fixable: false,
+		})
 		return res
 	}
 
@@ -72,6 +100,10 @@ func probeHost(h *MachineHost) *ProbeResult {
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
 		res.Message = fmt.Sprintf("SSH auth failed for %s: %v", h.Endpoint(), err)
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "ssh-auth", Severity: "error",
+			Message: res.Message, Fixable: false,
+		})
 		return res
 	}
 	defer client.Close()
@@ -102,7 +134,6 @@ func probeHost(h *MachineHost) *ProbeResult {
 		res.Facts["arch"] = out
 	}
 
-	// libvirt readiness — sufficient to start planning orchestration
 	libvirtActive := false
 	if out, err := run("systemctl is-active libvirtd 2>/dev/null || systemctl is-active libvirt 2>/dev/null || true"); err == nil {
 		res.Facts["libvirtd"] = out
@@ -121,15 +152,62 @@ func probeHost(h *MachineHost) *ProbeResult {
 		res.Facts["libvirtSocket"] = out
 	}
 
-	res.LibvirtReady = libvirtActive || (virshOK && res.Facts["libvirtSocket"] == "yes")
-	res.Orchestration = res.AuthOK // SSH is enough to start planning; libvirt is a readiness signal
-	res.OK = res.AuthOK
+	podmanOK := false
+	if out, err := run("command -v podman >/dev/null && podman --version || echo missing"); err == nil {
+		res.Facts["podman"] = out
+		if out != "missing" && !strings.Contains(strings.ToLower(out), "missing") {
+			podmanOK = true
+			res.PodmanReady = true
+		}
+	}
+
+	res.LibvirtReady = libvirtActive && virshOK
+	if !res.LibvirtReady && libvirtActive && res.Facts["libvirtSocket"] == "yes" && virshOK {
+		res.LibvirtReady = true
+	}
+	// Prefer active+virsh; socket+virsh also OK
+	if !res.LibvirtReady {
+		res.LibvirtReady = virshOK && (libvirtActive || res.Facts["libvirtSocket"] == "yes")
+	}
+
+	if !virshOK {
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "virsh-missing", Severity: "error",
+			Message:    "virsh / libvirt client packages missing — install libvirt stack on target",
+			Fixable:   true,
+			FixAction: FixInstallLibvirt,
+		})
+	} else if !libvirtActive {
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "libvirtd-inactive", Severity: "error",
+			Message:    "libvirtd is not active — enable and start the service",
+			Fixable:   true,
+			FixAction: FixStartLibvirtd,
+		})
+	}
+
+	if !podmanOK {
+		res.Issues = append(res.Issues, ProbeIssue{
+			ID: "podman-missing", Severity: "warn",
+			Message:    "podman missing — install for EE/runner agent container (deploy path)",
+			Fixable:   true,
+			FixAction: FixInstallPodman,
+		})
+	}
+
+	// Green only when libvirt is ready. Podman is recommended but not required for "ready".
+	res.Orchestration = res.AuthOK && res.LibvirtReady
+	res.OK = res.Orchestration
 
 	switch {
 	case res.AuthOK && res.LibvirtReady:
-		res.Message = fmt.Sprintf("SSH OK to %s — libvirt ready; can orchestrate against a plan.", h.Endpoint())
+		msg := fmt.Sprintf("SSH OK to %s — libvirt ready; can orchestrate against a plan.", h.Endpoint())
+		if !podmanOK {
+			msg += " (podman optional for EE agent — Fix this to install)"
+		}
+		res.Message = msg
 	case res.AuthOK && !res.LibvirtReady:
-		res.Message = fmt.Sprintf("SSH OK to %s — host reachable, but libvirt/virsh not ready yet (install/start libvirtd before deploy).", h.Endpoint())
+		res.Message = fmt.Sprintf("SSH OK to %s — partial: libvirt/virsh not ready. Use Fix this to install/start on target.", h.Endpoint())
 	default:
 		res.Message = "probe incomplete"
 	}

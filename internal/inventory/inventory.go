@@ -14,9 +14,9 @@ import (
 
 const (
 	StatusUnknown     = "unknown"
-	StatusReachable   = "reachable"   // SSH OK; libvirt may still be missing
-	StatusPartial     = "partial"     // SSH OK but not ready to orchestrate (no libvirt)
-	StatusUnreachable = "unreachable"
+	StatusReachable   = "reachable"   // green — SSH + libvirt ready to orchestrate
+	StatusPartial     = "partial"     // yellow — SSH OK but missing libvirt/packages
+	StatusUnreachable = "unreachable" // red — no TCP / SSH auth
 )
 
 // MachineHost is a physical/nested RHEL host that can run libvirtd + guests.
@@ -33,6 +33,7 @@ type MachineHost struct {
 	StatusMessage  string            `json:"statusMessage,omitempty" yaml:"statusMessage,omitempty"`
 	LastProbedAt   string            `json:"lastProbedAt,omitempty" yaml:"lastProbedAt,omitempty"`
 	Facts          map[string]string `json:"facts,omitempty" yaml:"facts,omitempty"`
+	Issues         []ProbeIssue      `json:"issues,omitempty" yaml:"issues,omitempty"`
 	CreatedAt      string            `json:"createdAt" yaml:"createdAt"`
 	UpdatedAt      string            `json:"updatedAt" yaml:"updatedAt"`
 }
@@ -47,15 +48,17 @@ type CreateReq struct {
 	Notes        string `json:"notes"`
 }
 
-// ProbeResult is the outcome of an SSH (+ optional libvirt) smoke check.
+// ProbeResult is the outcome of an SSH (+ libvirt / podman) smoke check.
 type ProbeResult struct {
 	OK            bool              `json:"ok"`
 	Reachable     bool              `json:"reachable"`
 	AuthOK        bool              `json:"authOK"`
 	LibvirtReady  bool              `json:"libvirtReady"`
-	Orchestration bool              `json:"orchestration"` // sufficient to start planning against this host
+	PodmanReady   bool              `json:"podmanReady"`
+	Orchestration bool              `json:"orchestration"` // green: ready to orchestrate a MockUp plan
 	Message       string            `json:"message"`
 	Facts         map[string]string `json:"facts,omitempty"`
+	Issues        []ProbeIssue      `json:"issues,omitempty"`
 	CheckedAt     string            `json:"checkedAt"`
 	Host          *MachineHost      `json:"host,omitempty"`
 }

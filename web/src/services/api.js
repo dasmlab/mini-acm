@@ -92,6 +92,11 @@ export async function probeInventory(id) {
   return data
 }
 
+export async function fixInventory(id, payload = {}) {
+  const { data } = await api.post(`/inventory/${id}/fix`, payload)
+  return data
+}
+
 export async function deleteInventory(id) {
   await api.delete(`/inventory/${id}`)
 }
