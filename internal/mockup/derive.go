@@ -20,6 +20,12 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 	}
 	paths := map[string]string{}
 
+	infraPath := filepath.Join(outDir, "infra-host.yaml")
+	if err := writeYAML(infraPath, infraHostDoc(m)); err != nil {
+		return nil, err
+	}
+	paths["infraHost"] = infraPath
+
 	hubPath := filepath.Join(outDir, "hub.yaml")
 	if err := writeYAML(hubPath, hubDoc(m)); err != nil {
 		return nil, err
@@ -40,8 +46,41 @@ func (s *Store) Derive(id string) (map[string]string, error) {
 	return paths, nil
 }
 
+func infraHostDoc(m *MockUp) map[string]any {
+	h := m.Spec.InfraHost
+	return map[string]any{
+		"apiVersion": "mini-acm.dasmlab.org/v1alpha1",
+		"kind":       "InfraHost",
+		"metadata": map[string]any{
+			"name":  h.Hostname,
+			"notes": h.Notes,
+			"labels": map[string]any{
+				"mini-acm.dasmlab.org/role": "provisioner",
+				"acm.reference":             "BareMetalHost-analogue",
+			},
+		},
+		"spec": map[string]any{
+			"kind": h.Kind, "os": h.OS, "arch": h.Arch,
+			"capacity": map[string]any{
+				"cpu": h.CPU, "memoryMiB": h.MemoryMiB, "diskGiB": h.DiskGiB,
+			},
+			"runtime": map[string]any{
+				"provider": m.Spec.Provider, "libvirtURI": h.LibvirtURI,
+				"networkName": h.NetworkName, "storagePool": h.StoragePool,
+				"podman": h.Podman,
+			},
+			"sshHost":      h.SSHHost,
+			"acmReference": h.ACMReference,
+			"hostsGuests":  true, // hub + deployment-cluster VMs live here
+		},
+	}
+}
+
 func hubDoc(m *MockUp) map[string]any {
 	h := m.Spec.Hub
+	ih := m.Spec.InfraHost
+	netName := or(ih.NetworkName, "ocp-lab")
+	pool := or(ih.StoragePool, "default")
 	return map[string]any{
 		"apiVersion": "mini-acm.dasmlab.org/v1alpha1",
 		"kind":       "Hub",
@@ -51,7 +90,10 @@ func hubDoc(m *MockUp) map[string]any {
 			"profile": h.Profile, "workDir": fmt.Sprintf("./data/hub-%s", m.Metadata.Name),
 			"installACM": h.InstallACM,
 		},
-		"provider": map[string]any{"type": m.Spec.Provider, "network": "ocp-lab", "storagePool": "default"},
+		"provider": map[string]any{
+			"type": m.Spec.Provider, "network": netName, "storagePool": pool,
+			"infraHost": ih.Hostname,
+		},
 		"network": map[string]any{
 			"machineCIDR": m.Spec.Network.MachineCIDR, "gateway": m.Spec.Network.Gateway,
 			"apiVIP": m.Spec.Network.APIVIP, "ingressVIP": m.Spec.Network.IngressVIP,
@@ -66,15 +108,34 @@ func hubDoc(m *MockUp) map[string]any {
 }
 
 func clusterDoc(m *MockUp, c ClusterNode) map[string]any {
+	notes := c.Notes
+	if c.ClusterImageSet != "" {
+		if notes != "" {
+			notes += "; "
+		}
+		notes += "clusterImageSet=" + c.ClusterImageSet
+	}
+	if c.DiscoveryISO != "" {
+		if notes != "" {
+			notes += "; "
+		}
+		notes += "discoveryISO=" + c.DiscoveryISO
+	}
+	ih := m.Spec.InfraHost
+	netName := or(ih.NetworkName, "ocp-lab")
+	pool := or(ih.StoragePool, "default")
 	return map[string]any{
 		"apiVersion": "mini-acm.dasmlab.org/v1alpha1",
 		"kind":       "ManagedCluster",
-		"metadata":   map[string]any{"name": c.Name},
+		"metadata":   map[string]any{"name": c.Name, "notes": notes},
 		"cluster": map[string]any{
 			"name": c.Name, "baseDomain": m.Spec.BaseDomain,
 			"version": c.Version, "profile": c.Profile,
 		},
-		"provider": map[string]any{"type": m.Spec.Provider, "network": "ocp-lab", "storagePool": "default"},
+		"provider": map[string]any{
+			"type": m.Spec.Provider, "network": netName, "storagePool": pool,
+			"infraHost": ih.Hostname,
+		},
 		"network": map[string]any{
 			"machineCIDR": m.Spec.Network.MachineCIDR, "gateway": m.Spec.Network.Gateway,
 			"apiVIP":     or(c.APIVIP, m.Spec.Network.APIVIP),

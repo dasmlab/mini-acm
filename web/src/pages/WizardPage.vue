@@ -1,54 +1,112 @@
 <template>
-  <q-page padding>
+  <q-page padding class="wide">
     <div class="row items-center q-mb-md">
       <q-btn flat dense icon="arrow_back" :to="{ name: 'topology', params: { id } }" />
-      <div class="text-h4 q-ml-sm">Wizard</div>
-      <q-space />
+      <div class="col">
+        <div class="text-h4">Wizard</div>
+        <div class="text-caption text-grey-7" v-if="mockup">
+          {{ mockup.metadata.name }} — fill MVP gaps, then derive YAML for CLI
+        </div>
+      </div>
       <q-btn outline color="primary" label="Topology" :to="{ name: 'topology', params: { id } }" class="q-mr-sm" />
       <q-btn color="primary" icon="save" label="Save gaps" :loading="saving" @click="persist" />
     </div>
 
     <div v-if="loading" class="row justify-center q-my-xl"><q-spinner size="3em" color="primary" /></div>
     <template v-else-if="mockup">
-      <p class="text-body2 text-grey-8 q-mb-md">
-        {{ mockup.metadata.name }} — capture parameters (including MVP gaps), derive YAML, then run CLI with
-        <code>--manual</code> as needed.
-      </p>
+      <q-banner v-if="gapSummary.length" dense rounded class="bg-orange-1 text-orange-10 q-mb-md">
+        <template #avatar><q-icon name="warning" color="orange-9" /></template>
+        Still needed: {{ gapSummary.join(' · ') }}
+      </q-banner>
 
-      <q-stepper v-model="step" color="primary" animated flat bordered header-nav>
+      <q-stepper v-model="step" color="primary" animated flat bordered header-nav class="wizard-stepper">
+        <q-step :name="0" title="Infra host" icon="precision_manufacturing" :done="step > 0">
+          <div class="text-subtitle1 q-mb-sm">
+            Phase 0 — RHEL machine that runs the CLI (podman) and libvirt guests
+          </div>
+          <div class="row q-col-gutter-md" v-if="mockup.spec.infraHost">
+            <div class="col-12 col-md-6">
+              <q-banner dense rounded class="bg-blue-grey-1 text-blue-grey-10 q-mb-md">
+                BM host or nested VM where commands run. Libvirt slices MGMT + DEPLOYMENT cluster VMs here.
+                ACM analogue: BareMetalHost / provisioner inventory — not an OCP node.
+                Guests install via InfraEnv (<code>agentBareMetal</code>).
+              </q-banner>
+              <q-markup-table flat bordered dense>
+                <tbody>
+                  <tr><td>Label</td><td>{{ mockup.spec.infraHost.label }}</td></tr>
+                  <tr><td>Hostname</td><td>{{ mockup.spec.infraHost.hostname }}</td></tr>
+                  <tr><td>Kind / OS</td><td>{{ mockup.spec.infraHost.kind }} · {{ mockup.spec.infraHost.os }}</td></tr>
+                  <tr><td>Capacity</td><td>{{ mockup.spec.infraHost.cpu }}c / {{ mockup.spec.infraHost.memoryMiB }}MiB / {{ mockup.spec.infraHost.diskGiB }}GiB</td></tr>
+                  <tr><td>Libvirt</td><td><code>{{ mockup.spec.infraHost.libvirtURI }}</code> · {{ mockup.spec.infraHost.networkName }}</td></tr>
+                  <tr><td>Podman</td><td>{{ mockup.spec.infraHost.podman ? 'yes' : 'no' }}</td></tr>
+                </tbody>
+              </q-markup-table>
+            </div>
+            <div class="col-12 col-md-6">
+              <q-input v-model="mockup.spec.infraHost.hostname" outlined dense label="Hostname" class="q-mb-sm" />
+              <q-select v-model="mockup.spec.infraHost.kind" :options="['baremetal', 'nested-vm']"
+                outlined dense label="Host kind" class="q-mb-sm" />
+              <q-select v-model="mockup.spec.infraHost.os" :options="['rhel-9', 'rhel-10']"
+                outlined dense label="OS" class="q-mb-sm" />
+              <q-input v-model="mockup.spec.infraHost.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm"
+                hint="MVP gap — where you ssh to run mini-acm / virsh" />
+              <q-input v-model="mockup.spec.infraHost.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
+              <q-banner dense rounded class="bg-grey-2 text-caption">
+                Derive emits <code>out/infra-host.yaml</code> (kind InfraHost) with hub/cluster YAMLs.
+              </q-banner>
+            </div>
+          </div>
+          <q-stepper-navigation>
+            <q-btn color="primary" label="Continue" @click="step = 1" />
+          </q-stepper-navigation>
+        </q-step>
+
         <q-step :name="1" title="Hub create" icon="dns" :done="step > 1">
           <div class="text-subtitle1 q-mb-sm">Local Agent-based ISO → SNO (OCP only, not ACM)</div>
-          <q-markup-table flat bordered dense class="q-mb-md">
-            <tbody>
-              <tr><td>Hostname</td><td>{{ mockup.spec.hub.hostname }}</td></tr>
-              <tr><td>Profile / size</td><td>{{ mockup.spec.hub.profile }} · {{ mockup.spec.hub.cpu }}c / {{ mockup.spec.hub.memoryMiB }}MiB / {{ mockup.spec.hub.diskGiB }}GiB</td></tr>
-              <tr><td>Version</td><td>{{ mockup.spec.hub.version }}</td></tr>
-              <tr><td>ISO</td><td>Generated by <code>openshift-install agent create image</code></td></tr>
-            </tbody>
-          </q-markup-table>
-          <q-input v-model="mockup.spec.gaps.pullSecretFile" outlined dense label="Pull secret file path" class="q-mb-sm"
-            hint="MVP gap — $PULL_SECRET_FILE" />
-          <q-input v-model="mockup.spec.gaps.sshPublicKeyFile" outlined dense label="SSH public key path" class="q-mb-md"
-            hint="MVP gap — $SSH_PUBLIC_KEY_FILE" />
-          <q-banner class="bg-grey-2 q-mb-md" rounded dense>
-            After derive:
-            <code>mini-acm --manual hub create --config data/mockups/{{ id }}/out/hub.yaml --skip-wait --skip-acm</code>
-          </q-banner>
+          <div class="row q-col-gutter-md">
+            <div class="col-12 col-md-5">
+              <q-markup-table flat bordered dense>
+                <tbody>
+                  <tr><td>Hostname</td><td>{{ mockup.spec.hub.hostname }}</td></tr>
+                  <tr><td>Profile / size</td><td>{{ mockup.spec.hub.profile }} · {{ mockup.spec.hub.cpu }}c / {{ mockup.spec.hub.memoryMiB }}MiB / {{ mockup.spec.hub.diskGiB }}GiB</td></tr>
+                  <tr><td>Version</td><td>{{ mockup.spec.hub.version }}</td></tr>
+                  <tr><td>Runs on</td><td>{{ mockup.spec.infraHost?.hostname || 'INFRA-HOST' }} (libvirt guest)</td></tr>
+                  <tr><td>ISO</td><td><code>openshift-install agent create image</code></td></tr>
+                </tbody>
+              </q-markup-table>
+            </div>
+            <div class="col-12 col-md-7">
+              <q-input v-model="mockup.spec.gaps.pullSecretFile" outlined dense label="Pull secret file path" class="q-mb-sm"
+                hint="Required — $PULL_SECRET_FILE or absolute path" />
+              <q-input v-model="mockup.spec.gaps.sshPublicKeyFile" outlined dense label="SSH public key path" class="q-mb-md"
+                hint="Required — $SSH_PUBLIC_KEY_FILE or ~/.ssh/id_ed25519.pub" />
+              <q-banner class="bg-grey-2" rounded dense>
+                <code>mini-acm --manual hub create --config data/mockups/{{ id }}/out/hub.yaml --skip-wait --skip-acm</code>
+              </q-banner>
+            </div>
+          </div>
           <q-stepper-navigation>
+            <q-btn flat label="Back" @click="step = 0" class="q-mr-sm" />
             <q-btn color="primary" label="Continue" @click="step = 2" />
           </q-stepper-navigation>
         </q-step>
 
         <q-step :name="2" title="Install ACM" icon="extension" :done="step > 2">
           <div class="text-subtitle1 q-mb-sm">Operators on the live hub — no second ISO</div>
-          <q-toggle v-model="mockup.spec.hub.installACM" label="Install ACM after hub" class="q-mb-sm" />
-          <q-input v-model="mockup.spec.acm.mceChannel" outlined dense label="MCE channel" class="q-mb-sm" />
-          <q-input v-model="mockup.spec.acm.acmChannel" outlined dense label="ACM channel" class="q-mb-sm" />
-          <q-input v-model="mockup.spec.gaps.hubKubeconfig" outlined dense label="Hub kubeconfig path" class="q-mb-md"
-            :hint="`default: data/hub-${mockup.metadata.name}/auth/kubeconfig`" />
-          <q-banner class="bg-grey-2 q-mb-md" rounded dense>
-            <code>mini-acm hub install-acm --config data/mockups/{{ id }}/out/hub.yaml</code>
-          </q-banner>
+          <div class="row q-col-gutter-md">
+            <div class="col-12 col-md-6">
+              <q-toggle v-model="mockup.spec.hub.installACM" label="Install ACM after hub" class="q-mb-sm" />
+              <q-input v-model="mockup.spec.acm.mceChannel" outlined dense label="MCE channel" class="q-mb-sm" />
+              <q-input v-model="mockup.spec.acm.acmChannel" outlined dense label="ACM channel" class="q-mb-sm" />
+            </div>
+            <div class="col-12 col-md-6">
+              <q-input v-model="mockup.spec.gaps.hubKubeconfig" outlined dense label="Hub kubeconfig path" class="q-mb-md"
+                :hint="`Suggested: ./data/hub-${mockup.metadata.name}/auth/kubeconfig`" />
+              <q-banner class="bg-grey-2" rounded dense>
+                <code>mini-acm hub install-acm --config data/mockups/{{ id }}/out/hub.yaml</code>
+              </q-banner>
+            </div>
+          </div>
           <q-stepper-navigation>
             <q-btn flat label="Back" @click="step = 1" class="q-mr-sm" />
             <q-btn color="primary" label="Continue" @click="step = 3" />
@@ -56,25 +114,60 @@
         </q-step>
 
         <q-step :name="3" title="Cluster create" icon="developer_board" :done="step > 3">
-          <div class="text-subtitle1 q-mb-sm">
-            3 VMs + DNS/HAProxy + CR YAML (ClusterDeployment / AgentClusterInstall / InfraEnv) — <strong>no ISO yet</strong>
+          <div class="row items-center q-mb-sm">
+            <div class="text-subtitle1">
+              Each DEPLOYMENT-CLUSTER → 3 VMs + DNS/HAProxy + ACM CRs (no ISO yet)
+            </div>
+            <q-space />
+            <q-btn outline dense color="primary" icon="add" label="Add cluster" @click="onAddCluster" />
           </div>
-          <div v-for="c in mockup.spec.clusters" :key="c.id" class="q-mb-md">
-            <q-card flat bordered>
-              <q-card-section>
-                <div class="text-subtitle2">{{ c.label }} ({{ c.name }})</div>
-                <div class="text-caption">
-                  {{ c.count }}× {{ c.cpu }}c / {{ c.memoryMiB }}MiB / {{ c.diskGiB }}GiB · {{ c.profile }}
-                </div>
-              </q-card-section>
-            </q-card>
+
+          <div class="row q-col-gutter-md">
+            <div v-for="(c, idx) in mockup.spec.clusters" :key="c.id" class="col-12 col-md-6">
+              <q-card flat bordered class="cluster-card full-height">
+                <q-card-section class="row items-start">
+                  <div>
+                    <div class="text-subtitle2">{{ c.label }}</div>
+                    <div class="text-caption text-grey-7">
+                      {{ c.name }} · {{ c.count }}× {{ c.cpu }}c / {{ c.memoryMiB }}MiB / {{ c.diskGiB }}GiB · {{ c.profile }}
+                    </div>
+                  </div>
+                  <q-space />
+                  <q-badge :color="phaseColor(c.phase)" class="text-capitalize">{{ c.phase || 'planned' }}</q-badge>
+                </q-card-section>
+                <q-card-section class="q-pt-none">
+                  <q-select
+                    v-model="c.phase"
+                    :options="phaseOptions"
+                    outlined dense label="Lifecycle phase"
+                    class="q-mb-sm"
+                  />
+                  <q-input v-model="c.clusterImageSet" outlined dense label="ClusterImageSet name" class="q-mb-sm"
+                    :hint="`MVP gap — e.g. ${imageSetName(c.version)}`"
+                    @blur="ensureImageSet(c)" />
+                  <q-input v-model="c.apiVIP" outlined dense label="API VIP" class="q-mb-sm" />
+                  <q-input v-model="c.ingressVIP" outlined dense label="Ingress VIP" class="q-mb-sm" />
+                  <q-input v-model="c.ipBase" outlined dense label="Node IP base" class="q-mb-sm" />
+                  <q-banner dense rounded class="bg-grey-2 text-caption">
+                    <code>mini-acm --manual cluster create --config …/out/cluster-{{ c.name }}.yaml</code>
+                  </q-banner>
+                </q-card-section>
+                <q-card-actions align="right">
+                  <q-btn flat dense color="negative" label="Remove" icon="delete"
+                    :disable="mockup.spec.clusters.length <= 1"
+                    @click="onDeleteCluster(c)" />
+                  <q-btn flat dense color="primary" label="Edit sizes"
+                    :to="{ name: 'topology', params: { id } }" />
+                </q-card-actions>
+              </q-card>
+              <div v-if="idx === mockup.spec.clusters.length - 1" class="q-mt-sm text-caption text-grey-6">
+                Tip: use Topology → Add cluster for another lifecycle object with its own VIPs/MACs.
+              </div>
+            </div>
           </div>
-          <q-input v-model="mockup.spec.gaps.clusterImageSet" outlined dense label="ClusterImageSet name" class="q-mb-md"
-            hint="MVP gap — must match AgentClusterInstall imageSetRef (e.g. img418-x86-64-appsub)" />
-          <q-banner class="bg-grey-2 q-mb-md" rounded dense>
-            <code>mini-acm --manual cluster create --config data/mockups/{{ id }}/out/cluster-….yaml</code>
-            then apply ns + pull-secret + acm-resources.yaml on hub.
-          </q-banner>
+
+          <q-toggle v-model="mockup.spec.gaps.manualApprove" label="Manual Agent approve / bind (all clusters)" class="q-mt-md" />
+
           <q-stepper-navigation>
             <q-btn flat label="Back" @click="step = 2" class="q-mr-sm" />
             <q-btn color="primary" label="Continue" @click="step = 4" />
@@ -82,13 +175,21 @@
         </q-step>
 
         <q-step :name="4" title="Attach ISO" icon="album">
-          <div class="text-subtitle1 q-mb-sm">Boot discovery ISO → Agents → install</div>
-          <q-input v-model="mockup.spec.gaps.discoveryISO" outlined dense label="Discovery ISO path" class="q-mb-sm"
-            hint="MVP gap — download from InfraEnv status.isoDownloadURL" />
-          <q-toggle v-model="mockup.spec.gaps.manualApprove" label="Manual Agent approve / bind" class="q-mb-md" />
-          <q-banner class="bg-grey-2 q-mb-md" rounded dense>
-            <code>mini-acm cluster attach-iso --config … --iso {{ mockup.spec.gaps.discoveryISO || './discovery.iso' }}</code>
-          </q-banner>
+          <div class="text-subtitle1 q-mb-sm">Per-cluster discovery ISO → Agents → install</div>
+          <div class="row q-col-gutter-md">
+            <div v-for="c in mockup.spec.clusters" :key="'iso-' + c.id" class="col-12 col-md-6">
+              <q-card flat bordered>
+                <q-card-section>
+                  <div class="text-subtitle2">{{ c.label }} ({{ c.name }})</div>
+                  <q-input v-model="c.discoveryISO" outlined dense label="Discovery ISO path" class="q-mt-sm"
+                    :hint="`MVP gap — InfraEnv status.isoDownloadURL → ./discovery-${c.name}.iso`" />
+                  <q-banner dense rounded class="bg-grey-2 q-mt-sm text-caption">
+                    <code>mini-acm cluster attach-iso --config …/cluster-{{ c.name }}.yaml --iso {{ c.discoveryISO || `./discovery-${c.name}.iso` }}</code>
+                  </q-banner>
+                </q-card-section>
+              </q-card>
+            </div>
+          </div>
           <q-stepper-navigation>
             <q-btn flat label="Back" @click="step = 3" class="q-mr-sm" />
             <q-btn color="primary" icon="description" label="Derive YAML" :loading="deriving" @click="onDerive" />
@@ -100,9 +201,11 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
-import { Notify } from 'quasar'
-import { getMockup, saveMockup, deriveMockup } from 'src/services/api'
+import { computed, onMounted, ref } from 'vue'
+import { Dialog, Notify } from 'quasar'
+import {
+  getMockup, saveMockup, deriveMockup, addCluster, deleteCluster, imageSetName,
+} from 'src/services/api'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -110,21 +213,42 @@ const mockup = ref(null)
 const loading = ref(true)
 const saving = ref(false)
 const deriving = ref(false)
-const step = ref(1)
+const step = ref(0)
+const phaseOptions = ['planned', 'created', 'installing', 'ready', 'destroy']
+
+const gapSummary = computed(() => {
+  if (!mockup.value) return []
+  const g = mockup.value.spec.gaps || {}
+  const missing = []
+  if (!g.pullSecretFile || g.pullSecretFile.startsWith('$')) missing.push('pull secret path')
+  if (!g.sshPublicKeyFile || g.sshPublicKeyFile.startsWith('$')) missing.push('SSH key path')
+  for (const c of mockup.value.spec.clusters || []) {
+    if (!c.clusterImageSet) missing.push(`${c.name} ClusterImageSet`)
+    if (step.value >= 4 && !c.discoveryISO) missing.push(`${c.name} discovery ISO`)
+  }
+  return missing
+})
+
+function phaseColor(phase) {
+  return {
+    planned: 'grey-6',
+    created: 'blue-7',
+    installing: 'orange-7',
+    ready: 'positive',
+    destroy: 'negative',
+  }[phase] || 'grey-6'
+}
+
+function ensureImageSet(c) {
+  if (!c.clusterImageSet) c.clusterImageSet = imageSetName(c.version)
+}
 
 async function load() {
   loading.value = true
   try {
     mockup.value = await getMockup(props.id)
-    if (!mockup.value.spec.gaps) {
-      mockup.value.spec.gaps = {
-        pullSecretFile: '',
-        sshPublicKeyFile: '',
-        clusterImageSet: '',
-        discoveryISO: '',
-        hubKubeconfig: '',
-        manualApprove: true,
-      }
+    for (const c of mockup.value.spec.clusters || []) {
+      ensureImageSet(c)
     }
   } catch (e) {
     Notify.create({ type: 'negative', message: e.message })
@@ -143,6 +267,32 @@ async function persist() {
   } finally {
     saving.value = false
   }
+}
+
+async function onAddCluster() {
+  try {
+    const res = await addCluster(props.id)
+    mockup.value = res.mockup
+    Notify.create({ type: 'positive', message: `Added ${res.cluster.label}` })
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  }
+}
+
+function onDeleteCluster(c) {
+  Dialog.create({
+    title: 'Remove deployment cluster?',
+    message: `Removes lifecycle object ${c.label} (${c.name}) from this MockUp.`,
+    cancel: true,
+    persistent: true,
+  }).onOk(async () => {
+    try {
+      mockup.value = await deleteCluster(props.id, c.id)
+      Notify.create({ type: 'positive', message: `Removed ${c.label}` })
+    } catch (e) {
+      Notify.create({ type: 'negative', message: e.response?.data || e.message })
+    }
+  })
 }
 
 async function onDerive() {
@@ -164,3 +314,15 @@ async function onDerive() {
 
 onMounted(load)
 </script>
+
+<style scoped>
+.wizard-stepper {
+  max-width: 100%;
+}
+.cluster-card {
+  min-height: 100%;
+}
+.full-height {
+  height: 100%;
+}
+</style>

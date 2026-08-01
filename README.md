@@ -31,6 +31,15 @@ ocp-lab create path (MVP commands)
   mini-acm cluster create  → 3 VMs + ACM CR / net assets
 ```
 
+## Quick start (RHEL INFRA-HOST — intended UX)
+
+1. Commission **RHEL 9/10**, activate subscription (or bring your own packages / fork).
+2. Clone this repo on that host (BM or nested-virt VM).
+3. Run the **container runtime** with libvirt access; author in UI or CLI.
+4. **Deploy** — runtime applies the MockUp (VMs on that host). Long-term: Ansible playbooks in the same EE the UI signals; today: derive YAML + `mini-acm` commands / `--manual`.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the EE / Ansible / as-a-service adapter model.
+
 ## Quick start (CLI)
 
 ```bash

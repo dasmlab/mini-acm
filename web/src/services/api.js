@@ -47,6 +47,11 @@ export async function addCluster(id) {
   return data
 }
 
+export async function deleteCluster(id, clusterId) {
+  const { data } = await api.delete(`/mockups/${id}/clusters/${clusterId}`)
+  return data
+}
+
 export async function deriveMockup(id) {
   const { data } = await api.post(`/mockups/${id}/derive`)
   return data
@@ -54,4 +59,9 @@ export async function deriveMockup(id) {
 
 export async function deleteMockup(id) {
   await api.delete(`/mockups/${id}`)
+}
+
+export function imageSetName(version) {
+  const compact = String(version || '4.18').replace(/\./g, '')
+  return `img${compact}-x86-64-appsub`
 }

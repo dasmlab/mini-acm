@@ -58,6 +58,7 @@ func (s *Server) routes() chi.Router {
 		r.Put("/mockups/{id}", s.putMockup)
 		r.Patch("/mockups/{id}/layout", s.patchLayout)
 		r.Post("/mockups/{id}/clusters", s.addCluster)
+		r.Delete("/mockups/{id}/clusters/{clusterId}", s.deleteCluster)
 		r.Post("/mockups/{id}/derive", s.derive)
 		r.Delete("/mockups/{id}", s.deleteMockup)
 	})
@@ -187,6 +188,25 @@ func (s *Server) addCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"cluster": c, "mockup": m})
+}
+
+func (s *Server) deleteCluster(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	clusterID := chi.URLParam(r, "clusterId")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := m.RemoveCluster(clusterID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.store.Save(m); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
 }
 
 func (s *Server) derive(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,33 @@
         <q-btn flat round dense icon="close" v-close-popup />
       </q-card-section>
 
-      <q-card-section v-if="kind === 'hub'">
+      <q-card-section v-if="kind === 'infraHost'">
+        <q-banner dense rounded class="bg-blue-grey-1 text-blue-grey-10 q-mb-md">
+          RHEL BM or nested VM that runs <strong>podman + libvirt</strong> and slices hub/cluster guest VMs.
+          ACM analogue: BareMetalHost inventory / provisioner — guests still install via InfraEnv (agentBareMetal).
+        </q-banner>
+        <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
+        <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
+        <q-select v-model="draft.kind" :options="infraKinds" outlined dense label="Host kind"
+          class="q-mb-sm" hint="baremetal = physical; nested-vm = VM that itself runs KVM" />
+        <q-select v-model="draft.os" :options="infraOS" outlined dense label="OS" class="q-mb-sm" />
+        <q-input v-model="draft.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
+        <q-input v-model="draft.networkName" outlined dense label="Libvirt network" class="q-mb-sm" />
+        <q-input v-model="draft.storagePool" outlined dense label="Storage pool" class="q-mb-sm" />
+        <q-input v-model="draft.sshHost" outlined dense label="SSH endpoint (optional)" class="q-mb-sm" />
+        <q-toggle v-model="draft.podman" label="Podman available (UI / tooling)" class="q-mb-md" />
+
+        <div class="text-subtitle2 q-mb-xs">Host capacity — vCPU: {{ draft.cpu }}</div>
+        <q-slider v-model="draft.cpu" :min="8" :max="128" :step="4" label class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">RAM: {{ draft.memoryMiB }} MiB ({{ (draft.memoryMiB / 1024).toFixed(0) }} GiB)</div>
+        <q-slider v-model="draft.memoryMiB" :min="32768" :max="524288" :step="8192" label class="q-mb-md" />
+        <div class="text-subtitle2 q-mb-xs">Disk: {{ draft.diskGiB }} GiB</div>
+        <q-slider v-model="draft.diskGiB" :min="500" :max="8000" :step="100" label class="q-mb-md" />
+        <q-input v-model="draft.acmReference" outlined dense type="textarea" autogrow label="ACM CRD reference note" class="q-mb-sm" />
+        <q-input v-model="draft.notes" outlined dense type="textarea" autogrow label="Notes" />
+      </q-card-section>
+
+      <q-card-section v-else-if="kind === 'hub'">
         <q-input v-model="draft.label" outlined dense label="Label" class="q-mb-sm" />
         <q-input v-model="draft.hostname" outlined dense label="Hostname" class="q-mb-sm" />
         <q-select v-model="draft.profile" :options="hubProfiles" outlined dense label="Profile"
@@ -38,18 +64,24 @@
         <q-input v-model="draft.name" outlined dense label="Cluster name" class="q-mb-sm" />
         <q-select v-model="draft.profile" :options="clusterProfiles" outlined dense label="Profile"
           class="q-mb-sm" @update:model-value="applyClusterProfile" />
-        <q-input v-model="draft.version" outlined dense label="OCP version" class="q-mb-sm" />
+        <q-select v-model="draft.phase" :options="phaseOptions" outlined dense label="Lifecycle phase" class="q-mb-sm" />
+        <q-input v-model="draft.version" outlined dense label="OCP version" class="q-mb-sm"
+          @update:model-value="onVersion" />
+        <q-input v-model="draft.clusterImageSet" outlined dense label="ClusterImageSet" class="q-mb-sm" />
         <q-input v-model.number="draft.count" type="number" outlined dense label="Node count" class="q-mb-sm"
           hint="MVP: 3 compact masters" />
         <q-input v-model="draft.ipBase" outlined dense label="IP base (master-0)" class="q-mb-sm" />
-        <q-input v-model="draft.macPrefix" outlined dense label="MAC prefix" class="q-mb-md" />
+        <q-input v-model="draft.macPrefix" outlined dense label="MAC prefix" class="q-mb-sm" />
+        <q-input v-model="draft.apiVIP" outlined dense label="API VIP" class="q-mb-sm" />
+        <q-input v-model="draft.ingressVIP" outlined dense label="Ingress VIP" class="q-mb-md" />
 
         <div class="text-subtitle2 q-mb-xs">vCPU / node: {{ draft.cpu }}</div>
         <q-slider v-model="draft.cpu" :min="2" :max="8" :step="1" label class="q-mb-md" />
-        <div class="text-subtitle2 q-mb-xs">RAM / node: {{ draft.memoryMiB }} MiB</div>
+        <div class="text-subtitle2 q-mb-xs">RAM / node: {{ draft.memoryMiB }} MiB ({{ (draft.memoryMiB / 1024).toFixed(1) }} GiB)</div>
         <q-slider v-model="draft.memoryMiB" :min="8192" :max="32768" :step="1024" label class="q-mb-md" />
         <div class="text-subtitle2 q-mb-xs">Disk / node: {{ draft.diskGiB }} GiB</div>
-        <q-slider v-model="draft.diskGiB" :min="80" :max="200" :step="10" label />
+        <q-slider v-model="draft.diskGiB" :min="80" :max="200" :step="10" label class="q-mb-md" />
+        <q-input v-model="draft.discoveryISO" outlined dense label="Discovery ISO path (optional)" />
       </q-card-section>
 
       <q-card-actions align="right">
@@ -73,8 +105,12 @@ const emit = defineEmits(['update:modelValue', 'save'])
 const draft = reactive({})
 const hubProfiles = ['hub-supported', 'hub-lab']
 const clusterProfiles = ['supported', 'lab-small']
+const phaseOptions = ['planned', 'created', 'installing', 'ready', 'destroy']
+const infraKinds = ['baremetal', 'nested-vm']
+const infraOS = ['rhel-9', 'rhel-10']
 
 const title = computed(() => {
+  if (props.kind === 'infraHost') return 'Edit INFRA-HOST'
   if (props.kind === 'hub') return 'Edit MGMT-CLUSTER'
   if (props.kind === 'acm') return 'Edit ACM'
   return 'Edit DEPLOYMENT-CLUSTER'
@@ -113,6 +149,11 @@ function applyClusterProfile(p) {
     draft.memoryMiB = 16384
     draft.diskGiB = 120
   }
+}
+
+function onVersion(v) {
+  const compact = String(v || '').replace(/\./g, '')
+  if (compact) draft.clusterImageSet = `img${compact}-x86-64-appsub`
 }
 
 function save() {
