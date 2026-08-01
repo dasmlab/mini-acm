@@ -3,6 +3,8 @@ package inventory
 import (
 	"bytes"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,7 +197,7 @@ func truncate(s string, n int) string {
 }
 
 func dialSSH(h *MachineHost) (*ssh.Client, error) {
-	addr := fmt.Sprintf("%s:%d", h.EffectiveSSHHost(), h.SSHPort)
+	addr := net.JoinHostPort(h.EffectiveSSHHost(), strconv.Itoa(h.SSHPort))
 	keyPath, key, err := loadIdentity(h.IdentityFile)
 	if err != nil {
 		return nil, fmt.Errorf("SSH identity: %v", err)

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ func probeHost(h *MachineHost) *ProbeResult {
 		CheckedAt: now,
 	}
 	host := h.EffectiveSSHHost()
-	addr := fmt.Sprintf("%s:%d", host, h.SSHPort)
+	addr := net.JoinHostPort(host, strconv.Itoa(h.SSHPort))
 	if h.Stretched {
 		res.Facts["reachability"] = "stretched"
 		res.Facts["stretchedHost"] = host
