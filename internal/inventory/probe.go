@@ -121,69 +121,74 @@ func probeHost(h *MachineHost) *ProbeResult {
 	defer client.Close()
 	res.AuthOK = true
 
-	run := func(cmd string) (string, error) {
-		return sshOutput(client, cmd)
-	}
-
-	if out, err := run("hostname"); err == nil && out != "" {
-		res.Facts["hostname"] = out
-	}
-	if out, err := run(`cat /etc/os-release 2>/dev/null | grep -E '^(NAME|VERSION)=' | tr '\n' ' '`); err == nil && out != "" {
-		res.Facts["os"] = out
-	}
-	if out, err := run("uname -m"); err == nil && out != "" {
-		res.Facts["arch"] = out
-	}
-
-	// One remote script for libvirt/podman — avoids empty-stdout flaps from many short SSH execs.
-	libvirtScript := `
+	// Single remote script (one SSH exec) + retries — multi-exec was flaky over WG/SSH.
+	probeScript := `
 set +e
+HN=$(hostname 2>/dev/null)
+OS=$(cat /etc/os-release 2>/dev/null | grep -E '^(NAME|VERSION)=' | tr '\n' ' ')
+ARCH=$(uname -m 2>/dev/null)
 LV=$(/usr/bin/systemctl is-active libvirtd 2>/dev/null)
-if [ "$LV" != "active" ]; then
-  LV=$(/usr/bin/systemctl is-active virtqemud 2>/dev/null)
-fi
-if [ "$LV" != "active" ]; then
-  LV=$(/usr/bin/systemctl is-active libvirt 2>/dev/null)
-fi
+[ "$LV" = "active" ] || LV=$(/usr/bin/systemctl is-active virtqemud 2>/dev/null)
+[ "$LV" = "active" ] || LV=$(/usr/bin/systemctl is-active libvirt 2>/dev/null)
 [ -n "$LV" ] || LV=unknown
-if test -x /usr/bin/virsh || command -v virsh >/dev/null 2>&1; then
+if test -x /usr/bin/virsh; then
   if /usr/bin/virsh version >/dev/null 2>&1; then V=ok; else V=broken; fi
 else
   V=missing
 fi
 if test -S /var/run/libvirt/libvirt-sock; then S=yes; else S=no; fi
 if command -v podman >/dev/null 2>&1; then P=$(podman --version 2>/dev/null); else P=missing; fi
-printf 'libvirtd=%s\nvirsh=%s\nsocket=%s\npodman=%s\n' "$LV" "$V" "$S" "$P"
+printf 'hostname=%s\n' "$HN"
+printf 'os=%s\n' "$OS"
+printf 'arch=%s\n' "$ARCH"
+printf 'libvirtd=%s\n' "$LV"
+printf 'virsh=%s\n' "$V"
+printf 'socket=%s\n' "$S"
+printf 'podman=%s\n' "$P"
+printf 'PROBE_OK=1\n'
 `
+
 	libvirtActive := false
 	virshOK := false
 	sockOK := false
 	podmanOK := false
-	out, err := run(libvirtScript)
+	out, err := sshOutputRetry(client, probeScript, 3)
 	if err != nil {
 		res.Facts["libvirtProbeError"] = truncate(err.Error()+" "+out, 200)
-	} else if strings.TrimSpace(out) == "" {
-		res.Facts["libvirtProbeError"] = "empty libvirt probe output"
+	} else if !strings.Contains(out, "PROBE_OK=1") {
+		res.Facts["libvirtProbeError"] = "incomplete probe output: " + truncate(out, 120)
 	} else {
 		for _, line := range strings.Split(out, "\n") {
 			line = strings.TrimSpace(line)
-			switch {
-			case strings.HasPrefix(line, "libvirtd="):
-				v := strings.TrimPrefix(line, "libvirtd=")
-				res.Facts["libvirtd"] = v
-				libvirtActive = v == "active"
-			case strings.HasPrefix(line, "virsh="):
-				v := strings.TrimPrefix(line, "virsh=")
-				res.Facts["virsh"] = v
-				virshOK = v == "ok"
-			case strings.HasPrefix(line, "socket="):
-				v := strings.TrimPrefix(line, "socket=")
-				res.Facts["libvirtSocket"] = v
-				sockOK = v == "yes"
-			case strings.HasPrefix(line, "podman="):
-				v := strings.TrimPrefix(line, "podman=")
-				res.Facts["podman"] = v
-				if v != "" && v != "missing" && !strings.Contains(strings.ToLower(v), "missing") {
+			key, val, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			switch key {
+			case "hostname":
+				if val != "" {
+					res.Facts["hostname"] = val
+				}
+			case "os":
+				if val != "" {
+					res.Facts["os"] = val
+				}
+			case "arch":
+				if val != "" {
+					res.Facts["arch"] = val
+				}
+			case "libvirtd":
+				res.Facts["libvirtd"] = val
+				libvirtActive = val == "active"
+			case "virsh":
+				res.Facts["virsh"] = val
+				virshOK = val == "ok"
+			case "socket":
+				res.Facts["libvirtSocket"] = val
+				sockOK = val == "yes"
+			case "podman":
+				res.Facts["podman"] = val
+				if val != "" && val != "missing" && !strings.Contains(strings.ToLower(val), "missing") {
 					podmanOK = true
 					res.PodmanReady = true
 				}
