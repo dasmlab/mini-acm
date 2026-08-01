@@ -108,9 +108,11 @@ func infraHostDoc(m *MockUp) map[string]any {
 				"networkName": h.NetworkName, "storagePool": h.StoragePool,
 				"podman": h.Podman,
 			},
-			"sshHost":      h.SSHHost,
-			"acmReference": h.ACMReference,
-			"hostsGuests":  true,
+			"sshHost":       h.SSHHost,
+			"sshUser":       h.SSHUser,
+			"inventoryRef":  h.InventoryRef,
+			"acmReference":  h.ACMReference,
+			"hostsGuests":   true,
 		},
 	}
 }

@@ -99,9 +99,10 @@ Go `provider/libvirt` remains useful as a thin driver *or* as what playbooks wra
 
 ## Next (near-term)
 
+0. **Inventory (MACHINE-HOST targets)** — DONE MVP: seed `dasm@192.168.1.142`, CRUD, SSH probe (auth + libvirt readiness). Orchestrate/deploy against a plan is next.
 1. **Host bootstrap doc + script** — RHEL 9/10: subscription, `libvirt`/`qemu-kvm`/`podman`, nested-virt note, socket permissions for the container.
-2. **Container ↔ libvirt** — documented `podman run` (volume `/var/run/libvirt`, device, or ssh+bastion); smoke API `GET /api/v1/infra/health`.
-3. **Deploy signal** — `POST …/mockups/{id}/deploy` queues a job; MVP may call Ansible locally or shell out to existing `hub create` / `cluster create` behind a job status UX (etcd-synthetic-load style).
+2. **Container ↔ libvirt** — documented `podman run` (volume `/var/run/libvirt`, device, or ssh+bastion); smoke via Inventory **Probe** + later `GET /api/v1/infra/health`.
+3. **Deploy signal** — `POST …/mockups/{id}/deploy` queues a job against linked Inventory host; MVP may call Ansible locally or shell out to existing `hub create` / `cluster create` behind a job status UX.
 4. **Ansible skeleton** — `ansible/` playbooks consuming `out/infra-host.yaml` + hub/cluster YAML; EE Collection-friendly layout.
 5. Keep existing MVP hardening: InfraEnv ISO fetch, Agent approve/bind, ClusterImageSet, NMStateConfig, AttachISO.
 

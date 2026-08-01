@@ -109,6 +109,8 @@ type InfraHostNode struct {
 	StoragePool  string     `json:"storagePool,omitempty" yaml:"storagePool,omitempty"`
 	Podman       bool       `json:"podman" yaml:"podman"`
 	SSHHost      string     `json:"sshHost,omitempty" yaml:"sshHost,omitempty"`
+	SSHUser      string     `json:"sshUser,omitempty" yaml:"sshUser,omitempty"`
+	InventoryRef string     `json:"inventoryRef,omitempty" yaml:"inventoryRef,omitempty"` // MachineHost inventory id
 	Notes        string     `json:"notes,omitempty" yaml:"notes,omitempty"`
 	ACMReference string     `json:"acmReference,omitempty" yaml:"acmReference,omitempty"`
 }
@@ -365,8 +367,9 @@ func defaultInfraHost(rackName string) InfraHostNode {
 		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "default",
 		Podman:  true,
 		SSHHost: "192.168.1.142",
+		SSHUser: "dasm",
 		ACMReference: "BareMetalHost analogue — libvirtd host; guests install via InfraEnv (agentBareMetal)",
-		Notes: "RHEL MACHINE HOST (BM or nested). Bridged NIC for SSH/mgmt; host-only VMnet12 optional. Libvirt LAN is behind VYOS-GW, not on VMnet12. Large disk = guest pool.",
+		Notes: "RHEL MACHINE HOST (BM or nested). Bridged NIC for SSH/mgmt; host-only VMnet12 optional. Libvirt LAN is behind VYOS-GW, not on VMnet12. Large disk = guest pool. Link Inventory entry for probe/orchestrate.",
 	}
 }
 
@@ -558,6 +561,9 @@ func normalize(m *MockUp) {
 	}
 	if ih.SSHHost == "" {
 		ih.SSHHost = "192.168.1.142"
+	}
+	if ih.SSHUser == "" {
+		ih.SSHUser = "dasm"
 	}
 	if ih.ACMReference == "" {
 		ih.ACMReference = "BareMetalHost analogue — libvirtd host; guests install via InfraEnv (agentBareMetal)"

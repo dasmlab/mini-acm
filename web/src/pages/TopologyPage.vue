@@ -608,7 +608,8 @@ const selectedMeta = computed(() => {
       acmLine: 'Infrastructure',
       editable: true,
       facts: [
-        { k: 'SSH', v: d.sshHost || '—' },
+        { k: 'SSH', v: `${d.sshUser || 'dasm'}@${d.sshHost || '—'}` },
+        { k: 'Inventory', v: d.inventoryRef || '— (link in Edit / Inventory page)' },
         { k: 'OS', v: `${d.os || '—'} · ${d.kind || '—'}` },
         { k: 'Size', v: `${d.cpu}c / ${Math.round((d.memoryMiB || 0) / 1024)}G` },
         { k: 'Disks', v: (d.disks || []).map((x) => `${x.sizeGiB}G ${x.role || ''}`).join(' + ') || `${d.diskGiB}G` },

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dasmlab/mini-acm/internal/api"
+	"github.com/dasmlab/mini-acm/internal/inventory"
 	"github.com/dasmlab/mini-acm/internal/mockup"
 )
 
@@ -49,6 +50,10 @@ LAB / TEST / DEV ONLY.`,
 			if err != nil {
 				return err
 			}
+			inv, err := inventory.NewStore(dataDir)
+			if err != nil {
+				return err
+			}
 
 			var staticHandler http.Handler
 			sub, err := fs.Sub(staticEmbed, "static")
@@ -58,7 +63,7 @@ LAB / TEST / DEV ONLY.`,
 				fmt.Fprintln(os.Stderr, "warning: no embedded UI (static/); API-only mode")
 			}
 
-			srv := api.New(store, dataDir, version, staticHandler)
+			srv := api.New(store, inv, dataDir, version, staticHandler)
 			fmt.Fprintf(os.Stderr, "mini-acm UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
 			return api.ListenAndServe(addr, srv.Handler())
 		},

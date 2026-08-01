@@ -31,10 +31,17 @@
             <q-item-label caption>Lab rack blueprints</q-item-label>
           </q-item-section>
         </q-item>
+        <q-item clickable v-ripple :to="{ name: 'inventory' }" active-class="text-primary bg-grey-2">
+          <q-item-section avatar><q-icon name="dns" /></q-item-section>
+          <q-item-section>
+            <q-item-label>Inventory</q-item-label>
+            <q-item-label caption>MACHINE-HOST targets</q-item-label>
+          </q-item-section>
+        </q-item>
 
         <q-separator class="q-my-md" />
         <div class="q-px-md q-pb-md text-caption text-grey-7">
-          Create a MockUp, arrange topology, then run the wizard.
+          Inventory hosts power orchestration. MockUp topology paints the rack; link a host to probe &amp; plan.
         </div>
       </q-list>
     </q-drawer>

@@ -7,6 +7,7 @@ const routes = [
     children: [
       { path: '', name: 'home', component: () => import('src/pages/HomePage.vue') },
       { path: 'mockups', name: 'mockups', component: () => import('src/pages/MockUpsPage.vue') },
+      { path: 'inventory', name: 'inventory', component: () => import('src/pages/InventoryPage.vue') },
       {
         path: 'mockups/:id/topology',
         name: 'topology',

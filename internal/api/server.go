@@ -11,19 +11,21 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/dasmlab/mini-acm/internal/inventory"
 	"github.com/dasmlab/mini-acm/internal/mockup"
 )
 
 type Server struct {
-	store    *mockup.Store
-	dataDir  string
-	buildVer string
-	static   http.Handler
-	router   chi.Router
+	store     *mockup.Store
+	inventory *inventory.Store
+	dataDir   string
+	buildVer  string
+	static    http.Handler
+	router    chi.Router
 }
 
-func New(store *mockup.Store, dataDir, buildVer string, static http.Handler) *Server {
-	s := &Server{store: store, dataDir: dataDir, buildVer: buildVer, static: static}
+func New(store *mockup.Store, inv *inventory.Store, dataDir, buildVer string, static http.Handler) *Server {
+	s := &Server{store: store, inventory: inv, dataDir: dataDir, buildVer: buildVer, static: static}
 	s.router = s.routes()
 	return s
 }
@@ -62,6 +64,13 @@ func (s *Server) routes() chi.Router {
 		r.Post("/mockups/{id}/derive", s.derive)
 		r.Post("/mockups/{id}/validate", s.validateMockup)
 		r.Delete("/mockups/{id}", s.deleteMockup)
+
+		r.Get("/inventory", s.listInventory)
+		r.Post("/inventory", s.createInventory)
+		r.Get("/inventory/{id}", s.getInventory)
+		r.Put("/inventory/{id}", s.putInventory)
+		r.Post("/inventory/{id}/probe", s.probeInventory)
+		r.Delete("/inventory/{id}", s.deleteInventory)
 	})
 
 	if s.static != nil {
@@ -244,6 +253,104 @@ func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteMockup(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Delete(chi.URLParam(r, "id")); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listInventory(w http.ResponseWriter, _ *http.Request) {
+	if s.inventory == nil {
+		writeJSON(w, http.StatusOK, []*inventory.MachineHost{})
+		return
+	}
+	list, err := s.inventory.List()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if list == nil {
+		list = []*inventory.MachineHost{}
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) createInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req inventory.CreateReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h, err := s.inventory.Create(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusCreated, h)
+}
+
+func (s *Server) getInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	h, err := s.inventory.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, h)
+}
+
+func (s *Server) putInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	existing, err := s.inventory.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	var h inventory.MachineHost
+	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.ID = existing.ID
+	h.CreatedAt = existing.CreatedAt
+	h.Seed = existing.Seed || h.Seed
+	if err := s.inventory.Save(&h); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, &h)
+}
+
+func (s *Server) probeInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	res, err := s.inventory.Probe(chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) deleteInventory(w http.ResponseWriter, r *http.Request) {
+	if s.inventory == nil {
+		http.Error(w, "inventory not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.inventory.Delete(chi.URLParam(r, "id")); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -23,8 +23,11 @@
         <q-input v-model="draft.libvirtURI" outlined dense label="Libvirt URI" class="q-mb-sm" />
         <q-input v-model="draft.networkName" outlined dense label="Lab libvirt net (behind VyOS)" class="q-mb-sm" />
         <q-input v-model="draft.storagePool" outlined dense label="Storage pool" class="q-mb-sm" />
-        <q-input v-model="draft.sshHost" outlined dense label="SSH endpoint" class="q-mb-sm"
+        <q-input v-model="draft.sshHost" outlined dense label="SSH host / IP" class="q-mb-sm"
           hint="e.g. 192.168.1.142" />
+        <q-input v-model="draft.sshUser" outlined dense label="SSH user" class="q-mb-sm" hint="dasm" />
+        <q-input v-model="draft.inventoryRef" outlined dense label="Inventory ref (id)" class="q-mb-sm"
+          hint="Link to Inventory MACHINE-HOST for probe/orchestrate" />
         <q-toggle v-model="draft.podman" label="Podman available (UI / tooling)" class="q-mb-md" />
 
         <div class="text-subtitle2 q-mb-xs">Host capacity — vCPU: {{ draft.cpu }}</div>
