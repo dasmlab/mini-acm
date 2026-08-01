@@ -1,45 +1,104 @@
 <template>
   <q-page padding>
-    <div class="text-h4 q-mb-sm">mini-acm</div>
-    <p class="text-body1 text-grey-8 q-mb-lg">
-      Design a lab rack as a <strong>MockUp</strong>, edit the topology
-      (MGMT-CLUSTER → ACM → DEPLOYMENT-CLUSTER), capture sizing and MVP-gap
-      parameters, then derive CLI YAML and run the install steps.
-    </p>
-
-    <q-banner class="bg-blue-1 text-primary q-mb-xl" rounded>
-      <template #avatar><q-icon name="science" color="primary" /></template>
-      LAB / TEST / DEV ONLY. Secrets stay in env / file paths — never in MockUp YAML in git.
-    </q-banner>
-
-    <div class="row q-col-gutter-md">
-      <div class="col-12 col-sm-4">
-        <q-card flat bordered class="cursor-pointer action-card" @click="$router.push({ name: 'mockups' })">
-          <q-card-section>
-            <div class="text-h6"><q-icon name="account_tree" class="q-mr-sm" />MockUps</div>
-            <div class="text-caption text-grey-7">Create / open a lab rack blueprint</div>
-          </q-card-section>
-        </q-card>
+    <div class="row items-end q-mb-md">
+      <div class="col">
+        <div class="text-h4 q-mb-xs">mini-acm</div>
+        <p class="text-body2 text-grey-7 q-mb-none home-lead">
+          One RHEL host. Libvirt guests. A VyOS edge. Mgmt SNO runs ACM; deployment clusters are managed on the lab LAN.
+        </p>
       </div>
-      <div class="col-12 col-sm-4">
-        <q-card flat bordered class="cursor-pointer action-card" @click="$router.push({ name: 'mockups' })">
-          <q-card-section>
-            <div class="text-h6"><q-icon name="schema" class="q-mr-sm" />Topology</div>
-            <div class="text-caption text-grey-7">Drag nodes, connect, edit hub / ACM / clusters</div>
-          </q-card-section>
-        </q-card>
-      </div>
-      <div class="col-12 col-sm-4">
-        <q-card flat bordered class="cursor-pointer action-card" @click="$router.push({ name: 'mockups' })">
-          <q-card-section>
-            <div class="text-h6"><q-icon name="playlist_play" class="q-mr-sm" />Wizard</div>
-            <div class="text-caption text-grey-7">Steps: hub → ACM → cluster → attach-iso</div>
-          </q-card-section>
-        </q-card>
-      </div>
+      <q-btn color="primary" unelevated label="Open MockUps" icon="account_tree"
+        :to="{ name: 'mockups' }" />
     </div>
+
+    <ArchitectureBoxView class="q-mb-lg" />
+
+    <div class="home-steps q-mb-lg">
+      <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">
+        <span class="home-step-n">1</span>
+        <span>
+          <span class="home-step-t">MockUp</span>
+          <span class="home-step-d">Create a lab rack blueprint</span>
+        </span>
+      </button>
+      <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">
+        <span class="home-step-n">2</span>
+        <span>
+          <span class="home-step-t">Topology</span>
+          <span class="home-step-d">Place host, gateway, mgmt &amp; deployments</span>
+        </span>
+      </button>
+      <button type="button" class="home-step" @click="$router.push({ name: 'mockups' })">
+        <span class="home-step-n">3</span>
+        <span>
+          <span class="home-step-t">Wizard</span>
+          <span class="home-step-d">Fill gaps · derive YAML · run CLI</span>
+        </span>
+      </button>
+    </div>
+
+    <p class="text-caption text-grey-6">
+      LAB / TEST / DEV ONLY — secrets stay in env / file paths, never in MockUp YAML in git.
+    </p>
   </q-page>
 </template>
 
 <script setup>
+import ArchitectureBoxView from 'src/components/ArchitectureBoxView.vue'
 </script>
+
+<style scoped>
+.home-lead {
+  max-width: 42rem;
+  line-height: 1.45;
+}
+.home-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 700px) {
+  .home-steps { grid-template-columns: 1fr; }
+}
+.home-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  text-align: left;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+.home-step:hover {
+  border-color: #90caf9;
+  background: #f7fbff;
+}
+.home-step-n {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.home-step-t {
+  display: block;
+  font-weight: 700;
+  color: #263238;
+  font-size: 0.95rem;
+}
+.home-step-d {
+  display: block;
+  margin-top: 0.15rem;
+  color: #78909c;
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+</style>
