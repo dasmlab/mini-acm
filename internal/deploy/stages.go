@@ -14,6 +14,10 @@ func (e *Engine) stageGenerate(j *Job) error {
 	if err != nil {
 		return err
 	}
+	localDir := e.mockups.Dir(j.MockUpID)
+	e.log(j, StageGenerate, "local mockup dir %s", localDir)
+	_ = e.SaveJob(j)
+
 	paths, err := e.mockups.Derive(j.MockUpID)
 	if err != nil {
 		return fmt.Errorf("derive: %w", err)
@@ -21,33 +25,44 @@ func (e *Engine) stageGenerate(j *Job) error {
 	m, _ = e.mockups.Get(j.MockUpID)
 
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	e.log(j, StageGenerate, "remote work root %s", remoteRoot)
+	_ = e.SaveJob(j)
+
 	var copied []string
+	var logLines []string
 	for key, local := range paths {
 		b, err := os.ReadFile(local)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", local, err)
 		}
 		remote := remoteRoot + "/out/" + filepath.Base(local)
+		e.log(j, StageGenerate, "copy %s  %s → %s (%d bytes)", key, local, remote, len(b))
+		_ = e.SaveJob(j)
 		if err := e.inv.WriteRemoteFile(j.InventoryID, remote, b); err != nil {
 			return err
 		}
 		copied = append(copied, key+"→"+filepath.Base(local))
+		logLines = append(logLines, fmt.Sprintf("%s\n  local:  %s\n  remote: %s", key, local, remote))
 	}
 
-	// Manifest / plan index for the EE later.
+	planRemote := remoteRoot + "/PLAN.txt"
 	index := fmt.Sprintf("mockup=%s\nstyle=%s\nhost=%s\nartifacts=%s\n",
 		m.Metadata.Name, m.Spec.Style, j.HostEndpoint, strings.Join(copied, ","))
-	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/PLAN.txt", []byte(index)); err != nil {
+	e.log(j, StageGenerate, "write index %s", planRemote)
+	_ = e.SaveJob(j)
+	if err := e.inv.WriteRemoteFile(j.InventoryID, planRemote, []byte(index)); err != nil {
 		return err
 	}
 
 	e.setStage(j, StageGenerate, StageOK,
 		fmt.Sprintf("Wrote %d plan files to %s/out on %s", len(copied), remoteRoot, j.HostName),
-		strings.Join(copied, "\n"))
+		strings.Join(logLines, "\n\n"))
 	return nil
 }
 
 func (e *Engine) stageEE(j *Job) error {
+	e.log(j, StageEE, "check podman + quay.io/ansible/creator-ee on %s", j.HostEndpoint)
+	_ = e.SaveJob(j)
 	script := `set -eu
 echo "EE_CHECK_START"
 command -v podman >/dev/null
@@ -82,6 +97,8 @@ echo EE_PODMAN_ONLY=1
 		return fmt.Errorf("EE check incomplete: %s", truncate(out, 500))
 	}
 	e.setStage(j, StageEE, StageOK, "Podman + Ansible creator-EE ready on inventory host", out)
+	e.log(j, StageEE, "host stdout:\n%s", trimHostOut(out))
+	_ = e.SaveJob(j)
 	return nil
 }
 
@@ -106,6 +123,8 @@ func (e *Engine) stageVInfra(j *Job) error {
 	if gw == "" {
 		gw = "10.77.30.1"
 	}
+	e.log(j, StageVInfra, "libvirt pool=%q net=%q cidr=%s gw=%s on %s", pool, netName, cidr, gw, j.HostEndpoint)
+	_ = e.SaveJob(j)
 	script := fmt.Sprintf(`set -eu
 echo VINFRA_START
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
@@ -157,6 +176,8 @@ echo VINFRA_OK=1
 	e.setStage(j, StageVInfra, StageOK,
 		fmt.Sprintf("libvirt pool %q + network %q ready (CIDR plan %s)", pool, netName, cidr),
 		out)
+	e.log(j, StageVInfra, "host stdout:\n%s", trimHostOut(out))
+	_ = e.SaveJob(j)
 	return nil
 }
 
@@ -171,6 +192,9 @@ func (e *Engine) stageOCP(j *Job) error {
 
 	// Verify remote workspace + prepare hub work dir; kick agent create if openshift-install present.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	e.log(j, StageOCP, "gaps pullSecret=%s sshPub=%s", m.Spec.Gaps.PullSecretFile, m.Spec.Gaps.SSHPublicKeyFile)
+	e.log(j, StageOCP, "prep hub workdir %s/hub (expect %s/out/hub.yaml)", remoteRoot, remoteRoot)
+	_ = e.SaveJob(j)
 	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/hub"
@@ -216,6 +240,9 @@ func (e *Engine) stageACM(j *Job) error {
 
 	// Check if kubeconfig is reachable from API pod OR stage manifests to host for later.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	e.log(j, StageACM, "stage ACM channels → %s/acm (acm=%s mce=%s) kubeconfig=%s",
+		remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel, kc)
+	_ = e.SaveJob(j)
 	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/acm"
@@ -247,12 +274,18 @@ func (e *Engine) stageSpokes(j *Job) error {
 	}
 
 	missingISO := 0
+	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
 	for _, c := range m.Spec.Clusters {
-		if isGapPlaceholder(c.DiscoveryISO) {
+		iso := c.DiscoveryISO
+		if isGapPlaceholder(iso) {
 			missingISO++
+			e.log(j, StageSpokes, "spoke %s (%s) discoveryISO=MISSING", c.Label, c.Name)
+		} else {
+			e.log(j, StageSpokes, "spoke %s (%s) discoveryISO=%s", c.Label, c.Name, iso)
 		}
 	}
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	e.log(j, StageSpokes, "list %s/out/cluster-*.yaml → %s/spokes", remoteRoot, remoteRoot)
+	_ = e.SaveJob(j)
 	script := fmt.Sprintf(`set -eu
 ROOT=%q
 mkdir -p "$ROOT/spokes"
@@ -288,4 +321,12 @@ func safeUser(j *Job) string {
 func isGapPlaceholder(p string) bool {
 	p = strings.TrimSpace(p)
 	return p == "" || strings.HasPrefix(p, "$")
+}
+
+func trimHostOut(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 1200 {
+		return s[:1200] + "…"
+	}
+	return s
 }

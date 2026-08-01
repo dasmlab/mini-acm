@@ -49,19 +49,27 @@ type Stage struct {
 	Log     string `json:"log,omitempty"`
 }
 
+// ConsoleLine is one breadcrumb in the deploy watch console (paths, host cmds, …).
+type ConsoleLine struct {
+	At    string `json:"at"`
+	Stage string `json:"stage,omitempty"`
+	Text  string `json:"text"`
+}
+
 // Job is an async deploy run for one MockUp.
 type Job struct {
-	ID          string  `json:"id"`
-	MockUpID    string  `json:"mockUpId"`
-	InventoryID string  `json:"inventoryId"`
-	HostName    string  `json:"hostName,omitempty"`
-	HostEndpoint string `json:"hostEndpoint,omitempty"`
-	Status      string  `json:"status"`
-	Message     string  `json:"message,omitempty"`
-	Stages      []Stage `json:"stages"`
-	StartedAt   string  `json:"startedAt"`
-	UpdatedAt   string  `json:"updatedAt"`
-	FinishedAt  string  `json:"finishedAt,omitempty"`
+	ID           string        `json:"id"`
+	MockUpID     string        `json:"mockUpId"`
+	InventoryID  string        `json:"inventoryId"`
+	HostName     string        `json:"hostName,omitempty"`
+	HostEndpoint string        `json:"hostEndpoint,omitempty"`
+	Status       string        `json:"status"`
+	Message      string        `json:"message,omitempty"`
+	Stages       []Stage       `json:"stages"`
+	Console      []ConsoleLine `json:"console,omitempty"`
+	StartedAt    string        `json:"startedAt"`
+	UpdatedAt    string        `json:"updatedAt"`
+	FinishedAt   string        `json:"finishedAt,omitempty"`
 }
 
 // Engine runs deploy jobs against inventory hosts.
@@ -142,9 +150,11 @@ func (e *Engine) Start(mockUpID, inventoryID, hostName, hostEndpoint string) (*J
 		Status:       JobRunning,
 		Message:      fmt.Sprintf("Assembly line started on %s (%s)", hostName, hostEndpoint),
 		Stages:       defaultStages(),
+		Console:      nil,
 		StartedAt:    now,
 		UpdatedAt:    now,
 	}
+	e.log(j, "", "assembly started → host=%s endpoint=%s mockup=%s", hostName, hostEndpoint, mockUpID)
 	if err := e.SaveJob(j); err != nil {
 		e.mu.Lock()
 		delete(e.active, mockUpID)
@@ -162,10 +172,24 @@ func (e *Engine) Start(mockUpID, inventoryID, hostName, hostEndpoint string) (*J
 	return j, nil
 }
 
+func (e *Engine) log(j *Job, stage, format string, args ...any) {
+	line := ConsoleLine{
+		At:    time.Now().UTC().Format("15:04:05"),
+		Stage: stage,
+		Text:  fmt.Sprintf(format, args...),
+	}
+	j.Console = append(j.Console, line)
+	const maxLines = 400
+	if len(j.Console) > maxLines {
+		j.Console = j.Console[len(j.Console)-maxLines:]
+	}
+}
+
 func (e *Engine) finish(j *Job, status, msg string) {
 	j.Status = status
 	j.Message = msg
 	j.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+	e.log(j, "", "finished status=%s — %s", status, msg)
 	_ = e.SaveJob(j)
 	phase := mockup.PhaseValidated
 	if status == JobSucceeded {
@@ -187,10 +211,18 @@ func (e *Engine) setStage(j *Job, id, status, message, log string) {
 			j.Stages[i].Status = status
 			j.Stages[i].Message = message
 			if log != "" {
-				j.Stages[i].Log = truncate(log, 4000)
+				j.Stages[i].Log = truncate(log, 8000)
 			}
 			break
 		}
+	}
+	switch status {
+	case StageRunning:
+		e.log(j, id, "▶ %s", message)
+	case StageOK:
+		e.log(j, id, "✓ %s", message)
+	case StageFailed, StageBlocked:
+		e.log(j, id, "✗ %s", message)
 	}
 	_ = e.SaveJob(j)
 }

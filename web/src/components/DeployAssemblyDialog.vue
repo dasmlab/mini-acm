@@ -42,6 +42,15 @@
         >
           {{ job.message }}
         </q-banner>
+
+        <div class="console-wrap q-mt-md">
+          <div class="console-head row items-center">
+            <span>Assembly console</span>
+            <q-space />
+            <span class="console-hint">paths · host cmds · live poll</span>
+          </div>
+          <pre ref="consoleEl" class="console">{{ consoleText }}</pre>
+        </div>
       </q-card-section>
 
       <q-card-actions align="right" class="q-px-md q-pb-md">
@@ -64,7 +73,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getDeployStatus } from 'src/services/api'
 
 const props = defineProps({
@@ -77,6 +86,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'finished'])
 
 const job = ref(null)
+const consoleEl = ref(null)
 let timer = null
 
 const placeholderStages = [
@@ -100,6 +110,25 @@ const bannerClass = computed(() => {
   return 'bg-blue-1 text-blue-10'
 })
 
+const consoleText = computed(() => {
+  const lines = job.value?.console
+  if (Array.isArray(lines) && lines.length) {
+    return lines.map((l) => {
+      const tag = l.stage ? `[${l.stage}]` : '[job]'
+      return `${l.at || '--:--:--'} ${tag.padEnd(12)} ${l.text}`
+    }).join('\n')
+  }
+  // Fallback: stitch stage messages/logs for older jobs without console[]
+  const stages = job.value?.stages || []
+  const parts = []
+  for (const st of stages) {
+    if (!st.message && !st.log) continue
+    parts.push(`[${st.id}] ${st.status}: ${st.message || ''}`)
+    if (st.log) parts.push(st.log)
+  }
+  return parts.join('\n') || 'Waiting for assembly output…'
+})
+
 function stationIcon(st) {
   if (st.status === 'ok') return 'check_circle'
   if (st.status === 'failed') return 'error'
@@ -117,11 +146,18 @@ function stationColor(st) {
   }[st.status] || 'grey-5'
 }
 
+async function scrollConsole() {
+  await nextTick()
+  const el = consoleEl.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
 async function poll() {
   if (!props.mockupId) return
   try {
     const data = await getDeployStatus(props.mockupId)
     job.value = data.job
+    await scrollConsole()
     if (data.job?.status && data.job.status !== 'running') {
       stopPoll()
       emit('finished', data)
@@ -133,7 +169,7 @@ async function poll() {
 
 function startPoll() {
   stopPoll()
-  timer = setInterval(poll, 1500)
+  timer = setInterval(poll, 1200)
   poll()
 }
 
@@ -163,12 +199,14 @@ watch(
   },
 )
 
+watch(consoleText, () => { scrollConsole() })
+
 onBeforeUnmount(stopPoll)
 </script>
 
 <style scoped>
 .deploy-dialog {
-  width: min(720px, 96vw);
+  width: min(860px, 96vw);
 }
 .line {
   display: grid;
@@ -212,6 +250,39 @@ onBeforeUnmount(stopPoll)
 .station-rail {
   display: none;
 }
+.console-wrap {
+  border: 1px solid #37474f;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a2329;
+}
+.console-head {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #cfd8dc;
+  background: #263238;
+  border-bottom: 1px solid #37474f;
+}
+.console-hint {
+  font-weight: 500;
+  color: #78909c;
+  font-size: 0.68rem;
+}
+.console {
+  margin: 0;
+  padding: 0.55rem 0.7rem 0.7rem;
+  min-height: 140px;
+  max-height: 220px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #b0bec5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 @media (max-width: 700px) {
   .line {
     grid-template-columns: 1fr;
@@ -226,5 +297,6 @@ onBeforeUnmount(stopPoll)
   .station-icon-wrap { grid-row: 1 / span 2; }
   .station-label { min-height: 0; margin-top: 0; }
   .station-detail { min-height: 0; -webkit-line-clamp: 4; }
+  .console { max-height: 180px; }
 }
 </style>
