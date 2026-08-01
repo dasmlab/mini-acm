@@ -39,3 +39,13 @@ OIDC_REDIRECT_URI=https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth
 When these are unset, serve runs **open local/dev** (no login). With them set, APIs require the `admin` client role.
 
 Store the secret in K8s as `mini-mock-oidc` / key `client-secret` (do not commit).
+
+
+## Prod wiring (2026-prod-1)
+
+- Namespace: `mini-mock-system`
+- Secret: `mini-mock-oidc` (key `client-secret`)
+- ConfigMap: `mini-mock-oidc-ca` (lab CA for Keycloak TLS)
+- Route: https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org (HAProxy **CERT55**)
+- Client role may be named `Admin` or `admin` (match is case-insensitive)
+- Without a session, `GET /api/v1/mockups` returns **401** when OIDC is enabled

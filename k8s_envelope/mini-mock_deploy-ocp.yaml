@@ -80,12 +80,17 @@ spec:
                 secretKeyRef:
                   name: mini-mock-oidc
                   key: client-secret
-                  optional: true
+                  optional: false
             - name: OIDC_REDIRECT_URI
               value: "https://mini-mock.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback"
+            - name: OIDC_CA_FILE
+              value: /etc/oidc/ca.crt
           volumeMounts:
             - name: mini-mock-data
               mountPath: /data
+            - name: oidc-ca
+              mountPath: /etc/oidc
+              readOnly: true
           ports:
             - name: http
               containerPort: 8080
@@ -113,6 +118,13 @@ spec:
         - name: mini-mock-data
           persistentVolumeClaim:
             claimName: mini-mock-data
+        - name: oidc-ca
+          configMap:
+            name: mini-mock-oidc-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
+            optional: true
 
 ---
 apiVersion: v1
