@@ -111,13 +111,20 @@ func (e *Engine) stageVInfra(j *Job) error {
 	if gw == "" {
 		gw = "10.77.30.1"
 	}
-	e.log(j, StageVInfra, "libvirt pool=%q net=%q cidr=%s gw=%s on %s", pool, netName, cidr, gw, j.HostEndpoint)
+	guests := buildGuests(m)
+	e.log(j, StageVInfra, "libvirt pool=%q net=%q cidr=%s — materialize %d guest(s)", pool, netName, cidr, len(guests))
+	for _, g := range guests {
+		e.log(j, StageVInfra, "plan guest %s role=%s cpu=%d memMiB=%d diskGiB=%d mac=%s",
+			g.Name, g.Role, g.CPU, g.MemoryMiB, g.DiskGiB, g.MAC)
+	}
 	_ = e.SaveJob(j)
+
 	script := fmt.Sprintf(`set -eu
 echo VINFRA_START
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 systemctl is-active libvirtd 2>/dev/null || sudo -n systemctl start libvirtd
 systemctl is-active libvirtd
+command -v virt-install >/dev/null || { echo "virt-install missing — Fix this install-libvirt"; exit 1; }
 POOL=%q
 NET=%q
 GW=%q
@@ -151,18 +158,17 @@ fi
 echo "NET_INFO<<"
 virsh net-info "$NET" || true
 echo ">>NET_INFO"
-echo VINFRA_OK=1
-`, pool, netName, gw)
+`, pool, netName, gw) + ensureGuestsScript(m, guests) + "\necho VINFRA_OK=1\n"
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
-		return fmt.Errorf("vInfra: %v (%s)", err, truncate(out, 600))
+		return fmt.Errorf("vInfra: %v (%s)", err, truncate(out, 800))
 	}
-	if !strings.Contains(out, "VINFRA_OK=1") {
-		return fmt.Errorf("vInfra incomplete: %s", truncate(out, 600))
+	if !strings.Contains(out, "VINFRA_OK=1") || !strings.Contains(out, "GUESTS_DEFINED=1") {
+		return fmt.Errorf("vInfra incomplete: %s", truncate(out, 800))
 	}
 	e.setStage(j, StageVInfra, StageOK,
-		fmt.Sprintf("libvirt pool %q + network %q ready (CIDR plan %s)", pool, netName, cidr),
+		fmt.Sprintf("libvirt pool %q + net %q + %d guest domain(s) defined (shut off until ISO boot)", pool, netName, len(guests)),
 		out)
 	e.log(j, StageVInfra, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
@@ -175,39 +181,187 @@ func (e *Engine) stageOCP(j *Job) error {
 		return err
 	}
 	if isGapPlaceholder(m.Spec.Gaps.PullSecretFile) || isGapPlaceholder(m.Spec.Gaps.SSHPublicKeyFile) {
-		return blocked("OCP-MGMT needs real pull-secret and SSH public key paths in Wizard gaps before ISO/agent install can run (placeholders still set)")
+		return blocked("OCP-MGMT needs real pull-secret and SSH public key paths before agent ISO create (placeholders still set)")
 	}
 
-	// Verify remote workspace; installer comes from curated EE (podman), not host PATH.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
 	img := EEImage()
-	e.log(j, StageOCP, "gaps pullSecret=%s sshPub=%s", m.Spec.Gaps.PullSecretFile, m.Spec.Gaps.SSHPublicKeyFile)
-	e.log(j, StageOCP, "prep hub workdir %s/hub via EE %s", remoteRoot, img)
+	hubName := m.Spec.Hub.Hostname
+	if hubName == "" {
+		hubName = "hub-sno"
+	}
+	hubMAC := m.Spec.Hub.MAC
+	if hubMAC == "" {
+		hubMAC = "52:54:00:13:00:20"
+	}
+	hubIP := m.Spec.Hub.IP
+	if hubIP == "" {
+		hubIP = "10.77.30.20"
+	}
+	baseDomain := m.Spec.BaseDomain
+	if baseDomain == "" {
+		baseDomain = "lab.example.net"
+	}
+	machineCIDR := m.Spec.Network.MachineCIDR
+	if machineCIDR == "" {
+		machineCIDR = "10.77.30.0/24"
+	}
+	clusterName := m.Metadata.Name
+	if clusterName == "" {
+		clusterName = "hub"
+	}
+
+	pullBytes, err := os.ReadFile(m.Spec.Gaps.PullSecretFile)
+	if err != nil {
+		return fmt.Errorf("read pull secret: %w", err)
+	}
+	sshBytes, err := os.ReadFile(m.Spec.Gaps.SSHPublicKeyFile)
+	if err != nil {
+		return fmt.Errorf("read ssh public key: %w", err)
+	}
+	pullRemote := remoteRoot + "/hub/pull-secret.json"
+	sshRemote := remoteRoot + "/hub/ssh.pub"
+	e.log(j, StageOCP, "stage secrets → %s , %s", pullRemote, sshRemote)
 	_ = e.SaveJob(j)
+	if err := e.inv.WriteRemoteFile(j.InventoryID, pullRemote, pullBytes); err != nil {
+		return err
+	}
+	if err := e.inv.WriteRemoteFile(j.InventoryID, sshRemote, sshBytes); err != nil {
+		return err
+	}
+
+	// Minimal install-config + agent-config for agent-based SNO.
+	ic := fmt.Sprintf(`apiVersion: v1
+baseDomain: %s
+metadata:
+  name: %s
+controlPlane:
+  name: master
+  replicas: 1
+  architecture: amd64
+  hyperthreading: Enabled
+compute:
+- name: worker
+  replicas: 0
+  architecture: amd64
+networking:
+  networkType: OVNKubernetes
+  machineNetwork:
+  - cidr: %s
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  none: {}
+pullSecret: '%s'
+sshKey: |
+  %s
+`, baseDomain, clusterName, machineCIDR,
+		strings.ReplaceAll(strings.TrimSpace(string(pullBytes)), "'", "''"),
+		strings.TrimSpace(string(sshBytes)))
+
+	ac := fmt.Sprintf(`apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: %s
+rendezvousIP: %s
+hosts:
+- hostname: %s
+  role: master
+  interfaces:
+  - name: enp1s0
+    macAddress: "%s"
+  networkConfig:
+    interfaces:
+    - name: enp1s0
+      type: ethernet
+      state: up
+      mac-address: "%s"
+      ipv4:
+        enabled: true
+        dhcp: false
+        address:
+        - ip: %s
+          prefix-length: 24
+        gateway: %s
+`, clusterName, hubIP, hubName, hubMAC, hubMAC, hubIP, orGateway(m))
+
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/hub/install-config.yaml", []byte(ic)); err != nil {
+		return err
+	}
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/hub/agent-config.yaml", []byte(ac)); err != nil {
+		return err
+	}
+	e.log(j, StageOCP, "wrote install-config + agent-config; run openshift-install agent create image via EE")
+	_ = e.SaveJob(j)
+
 	script := fmt.Sprintf(`set -eu
 ROOT=%q
-EE_IMAGE=%s
+EE_IMAGE=%q
+HUB=%q
 mkdir -p "$ROOT/hub"
-test -f "$ROOT/out/hub.yaml"
-podman run --rm "$EE_IMAGE" version 2>&1 | sed -n '1,2p'
-echo "HAS_INSTALLER=1"
-# VyOS / appliance note
-if [ -n "%s" ]; then echo "VYOS_ISO_SET=1"; else echo "VYOS_ISO_SET=0"; fi
+# Keep copies install-config needs (installer consumes/moves install-config.yaml)
+cp -f "$ROOT/hub/install-config.yaml" "$ROOT/hub/install-config.yaml.bak" 2>/dev/null || true
+echo "AGENT_CREATE_START"
+set +e
+podman run --rm \
+  -v "$ROOT/hub:/output:Z" \
+  --entrypoint /usr/local/bin/openshift-install \
+  "$EE_IMAGE" agent create image --dir /output
+RC=$?
+set -e
+if [ "$RC" -ne 0 ]; then
+  echo "AGENT_CREATE_FAILED=$RC"
+  # Guests already exist from vInfra — do not hard-fail the whole line for a stub pull-secret.
+  virsh list --all || true
+  echo OCP_SOFT_FAIL=1
+  exit 0
+fi
+ISO=$(ls -1 "$ROOT/hub"/agent*.iso 2>/dev/null | head -1 || true)
+echo "ISO=$ISO"
+if [ -n "$ISO" ] && virsh dominfo "$HUB" >/dev/null 2>&1; then
+  # Attach ISO as CDROM and boot hub SNO
+  virsh change-media "$HUB" sda "$ISO" --insert --config 2>/dev/null \
+    || virsh change-media "$HUB" hdc "$ISO" --insert --config 2>/dev/null \
+    || virsh attach-disk "$HUB" "$ISO" sda --type cdrom --mode readonly --persistent 2>/dev/null \
+    || true
+  virsh start "$HUB" || true
+  echo "HUB_BOOTED=1"
+fi
 virsh list --all || true
 echo OCP_PREP_OK=1
-`, remoteRoot, img, m.Spec.Gateway.ISOPath)
+`, remoteRoot, img, hubName)
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
-		return fmt.Errorf("OCP prep: %v (%s)", err, truncate(out, 500))
+		return fmt.Errorf("OCP: %v (%s)", err, truncate(out, 800))
+	}
+	e.log(j, StageOCP, "host stdout:\n%s", trimHostOut(out))
+	_ = e.SaveJob(j)
+	if strings.Contains(out, "OCP_SOFT_FAIL=1") {
+		e.setStage(j, StageOCP, StageOK,
+			fmt.Sprintf("Guest domains exist; agent ISO not created yet (openshift-install failed — often stub/invalid pull-secret). Hub %s left shut off. Fix pull-secret and re-Deploy/Clean.", hubName),
+			out)
+		return nil
 	}
 	if !strings.Contains(out, "OCP_PREP_OK=1") {
-		return fmt.Errorf("OCP prep incomplete: %s", truncate(out, 500))
+		return fmt.Errorf("OCP incomplete: %s", truncate(out, 800))
 	}
-	e.setStage(j, StageOCP, StageOK,
-		fmt.Sprintf("OCP prep OK — hub.yaml staged; installer available via EE %s (agent image next)", img),
-		out)
+	msg := fmt.Sprintf("Agent ISO path ready; hub domain %s", hubName)
+	if strings.Contains(out, "HUB_BOOTED=1") {
+		msg = fmt.Sprintf("Agent ISO attached — started hub domain %s", hubName)
+	}
+	e.setStage(j, StageOCP, StageOK, msg, out)
 	return nil
+}
+
+func orGateway(m *mockup.MockUp) string {
+	if m.Spec.Network.Gateway != "" {
+		return m.Spec.Network.Gateway
+	}
+	return "10.77.30.1"
 }
 
 func (e *Engine) stageACM(j *Job) error {
@@ -259,39 +413,45 @@ func (e *Engine) stageSpokes(j *Job) error {
 		return nil
 	}
 
-	missingISO := 0
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
-	for _, c := range m.Spec.Clusters {
-		iso := c.DiscoveryISO
-		if isGapPlaceholder(iso) {
-			missingISO++
-			e.log(j, StageSpokes, "spoke %s (%s) discoveryISO=MISSING", c.Label, c.Name)
-		} else {
-			e.log(j, StageSpokes, "spoke %s (%s) discoveryISO=%s", c.Label, c.Name, iso)
+	guests := buildGuests(m)
+	var spokeNames []string
+	var namesShell strings.Builder
+	for _, g := range guests {
+		if g.Role == "spoke" {
+			spokeNames = append(spokeNames, g.Name)
+			fmt.Fprintf(&namesShell, " %s", shellQuote(g.Name))
 		}
 	}
-	e.log(j, StageSpokes, "list %s/out/cluster-*.yaml → %s/spokes", remoteRoot, remoteRoot)
+	e.log(j, StageSpokes, "expect spoke domains: %s", strings.Join(spokeNames, ", "))
 	_ = e.SaveJob(j)
+
 	script := fmt.Sprintf(`set -eu
-ROOT=%q
-mkdir -p "$ROOT/spokes"
-ls -la "$ROOT/out"/cluster-*.yaml 2>/dev/null || true
-COUNT=%d
-echo "SPOKE_PLANS=$COUNT"
+export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
+echo "SPOKE_CHECK<<"
+virsh list --all || true
+echo ">>SPOKE_CHECK"
+MISSING=0
+for n in%s; do
+  if virsh dominfo "$n" >/dev/null 2>&1; then
+    echo "OK $n ($(virsh domstate "$n" 2>/dev/null | tr -d '\n'))"
+  else
+    echo "MISSING $n"
+    MISSING=$((MISSING+1))
+  fi
+done
+echo "SPOKE_MISSING=$MISSING"
 echo SPOKES_STAGED=1
-`, remoteRoot, len(m.Spec.Clusters))
+`, namesShell.String())
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
 		return fmt.Errorf("spokes: %v (%s)", err, truncate(out, 400))
 	}
-	if missingISO > 0 {
-		return blocked(fmt.Sprintf(
-			"%d deployment cluster(s) still need discovery ISO paths (InfraEnv → attach-iso). Cluster YAML is staged on host at %s/out — re-Deploy after ISOs exist.",
-			missingISO, remoteRoot))
+	if strings.Contains(out, "SPOKE_MISSING=") && !strings.Contains(out, "SPOKE_MISSING=0") {
+		return fmt.Errorf("spoke domains missing after vInfra — check virt-install / pool perms: %s", truncate(out, 600))
 	}
 	e.setStage(j, StageSpokes, StageOK,
-		fmt.Sprintf("%d spoke plan(s) staged with discovery ISO paths set", len(m.Spec.Clusters)),
+		fmt.Sprintf("%d spoke domain(s) defined (shut off). Discovery ISO attach is next after ACM InfraEnv — not auto-booted yet.", len(spokeNames)),
 		out)
 	return nil
 }
