@@ -131,6 +131,17 @@ func ensureGuestsScript(m *mockup.MockUp, guests []guestSpec) string {
 	b.WriteString(`POOL_PATH=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
 [ -n "$POOL_PATH" ] || POOL_PATH="$HOME/libvirt-images"
 mkdir -p "$POOL_PATH"
+# qemu:///system runs as qemu (uid 107) — must traverse $HOME and read/write disks.
+chmod o+x "$HOME" 2>/dev/null || true
+chmod 755 "$POOL_PATH" 2>/dev/null || true
+if command -v setfacl >/dev/null 2>&1; then
+  setfacl -m u:qemu:--x "$HOME" 2>/dev/null || true
+  setfacl -m u:qemu:rwx "$POOL_PATH" 2>/dev/null || true
+fi
+if command -v semanage >/dev/null 2>&1; then
+  semanage fcontext -a -t virt_image_t "$POOL_PATH(/.*)?" 2>/dev/null || true
+  restorecon -Rv "$POOL_PATH" 2>/dev/null || true
+fi
 echo "POOL_PATH=$POOL_PATH"
 `)
 
@@ -159,6 +170,14 @@ else
     --import \
     || { echo "virt-install failed for $NAME"; exit 1; }
   virsh destroy "$NAME" 2>/dev/null || true
+  # vol-create-as often leaves root:root 0600 under $HOME — qemu cannot start the domain.
+  VOL_PATH=$(virsh vol-path --pool "$POOL" "${NAME}.qcow2" 2>/dev/null || echo "$POOL_PATH/${NAME}.qcow2")
+  if [ -f "$VOL_PATH" ]; then
+    sudo -n chown qemu:qemu "$VOL_PATH" 2>/dev/null || sudo -n chown 107:107 "$VOL_PATH" 2>/dev/null || chmod 666 "$VOL_PATH" || true
+    if command -v chcon >/dev/null 2>&1; then
+      sudo -n chcon -t virt_image_t "$VOL_PATH" 2>/dev/null || chcon -t virt_image_t "$VOL_PATH" 2>/dev/null || true
+    fi
+  fi
   virsh pool-refresh "$POOL" 2>/dev/null || true
   echo "DEFINED $NAME vol=${POOL}/${NAME}.qcow2"
 fi

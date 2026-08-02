@@ -330,14 +330,33 @@ if [ "$RC" -ne 0 ]; then
 fi
 ISO=$(ls -1 "$ROOT/hub"/agent*.iso 2>/dev/null | head -1 || true)
 echo "ISO=$ISO"
+POOL=$(virsh pool-list --name 2>/dev/null | awk 'NF{print; exit}')
+[ -n "$POOL" ] || POOL=default
+POOL_PATH=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
+[ -n "$POOL_PATH" ] || POOL_PATH="$HOME/libvirt-images"
+mkdir -p "$POOL_PATH"
+chmod o+x "$HOME" 2>/dev/null || true
+chmod 755 "$POOL_PATH" 2>/dev/null || true
 if [ -n "$ISO" ] && virsh dominfo "$HUB" >/dev/null 2>&1; then
-  # Attach ISO as CDROM and boot hub SNO
-  virsh change-media "$HUB" sda "$ISO" --insert --config 2>/dev/null \
-    || virsh change-media "$HUB" hdc "$ISO" --insert --config 2>/dev/null \
-    || virsh attach-disk "$HUB" "$ISO" sda --type cdrom --mode readonly --persistent 2>/dev/null \
+  # Copy out of the podman-written hub dir (often container_file_t / MCS) into the pool.
+  ISO_POOL="$POOL_PATH/${HUB}-agent.iso"
+  cp -f "$ISO" "$ISO_POOL"
+  chmod a+r "$ISO_POOL"
+  if command -v chcon >/dev/null 2>&1; then
+    chcon -t virt_content_t -l s0 "$ISO_POOL" 2>/dev/null || true
+  fi
+  echo "ISO_POOL=$ISO_POOL"
+  virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
+  virsh change-media "$HUB" sda "$ISO_POOL" --insert --config 2>/dev/null \
+    || virsh change-media "$HUB" hdc "$ISO_POOL" --insert --config 2>/dev/null \
+    || virsh attach-disk "$HUB" "$ISO_POOL" sda --type cdrom --mode readonly --persistent 2>/dev/null \
     || true
-  virsh start "$HUB" || true
-  echo "HUB_BOOTED=1"
+  if virsh start "$HUB"; then
+    echo "HUB_BOOTED=1"
+  else
+    echo "HUB_START_FAILED=1"
+    virsh start "$HUB" 2>&1 || true
+  fi
 fi
 echo "VIRSH_SYSTEM<<"
 virsh --connect qemu:///system list --all || true
@@ -375,9 +394,13 @@ echo OCP_PREP_OK=1
 		return fmt.Errorf("OCP incomplete: %s", truncate(out, 800))
 	}
 	if !strings.Contains(out, "HUB_BOOTED=1") {
+		extra := ""
+		if strings.Contains(out, "HUB_START_FAILED=1") {
+			extra = " (virsh start failed — often qemu cannot read disks under $HOME: chmod o+x $HOME + chown qemu disks)"
+		}
 		return blocked(fmt.Sprintf(
-			"Agent ISO may exist but hub domain %s was not started — attach ISO manually or re-Deploy. Guests: virsh --connect qemu:///system list --all",
-			hubName))
+			"Agent ISO may exist but hub domain %s was not started%s. Guests: virsh --connect qemu:///system list --all",
+			hubName, extra))
 	}
 	e.setStage(j, StageOCP, StageOK,
 		fmt.Sprintf("MGMT VM started — agent ISO attached to %s (SNO install continues on host; kubeconfig not ready yet)", hubName),
