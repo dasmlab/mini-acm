@@ -57,3 +57,40 @@ echo WRITE_OK=1
 	}
 	return nil
 }
+
+// ReadRemoteFile returns the contents of a remote file (nil if missing).
+func (s *Store) ReadRemoteFile(id, remotePath string) ([]byte, error) {
+	client, _, err := s.Dial(id)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	script := fmt.Sprintf(`set -euo pipefail
+if [ ! -f %q ]; then
+  echo MISSING=1
+  exit 0
+fi
+echo CONTENT_B64_BEGIN
+base64 -w0 %q 2>/dev/null || base64 %q
+echo
+echo CONTENT_B64_END
+`, remotePath, remotePath, remotePath)
+	out, err := sshOutput(client, script)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %v (%s)", remotePath, err, truncate(out, 400))
+	}
+	if strings.Contains(out, "MISSING=1") {
+		return nil, nil
+	}
+	start := strings.Index(out, "CONTENT_B64_BEGIN")
+	end := strings.Index(out, "CONTENT_B64_END")
+	if start < 0 || end < 0 || end <= start {
+		return nil, fmt.Errorf("read %s: malformed response", remotePath)
+	}
+	payload := strings.TrimSpace(out[start+len("CONTENT_B64_BEGIN") : end])
+	b, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: decode: %w", remotePath, err)
+	}
+	return b, nil
+}

@@ -94,9 +94,9 @@ func defaultStages() []Stage {
 		{ID: StageEE, Label: "Execution environment", Detail: "Curated mock-me-ee via podman on inventory host", Icon: "precision_manufacturing", Status: StagePending},
 		{ID: StageGenerate, Label: "Generate objects", Detail: "Stage YAML / secrets for the rack", Icon: "description", Status: StagePending},
 		{ID: StageVInfra, Label: "Define lab VMs", Detail: "libvirt pool, net, gateway + MGMT + spoke domains", Icon: "lan", Status: StagePending},
-		{ID: StageOCP, Label: "OCP-MGMT (SNO)", Detail: "Agent ISO → start hub VM (install still runs on host)", Icon: "memory", Status: StagePending},
-		{ID: StageACM, Label: "Install ACM", Detail: "Operators on live MGMT kubeconfig", Icon: "extension", Status: StagePending},
-		{ID: StageSpokes, Label: "OCP-DEPLOY clusters", Detail: "Discovery ISO + ACM spoke bring-up", Icon: "developer_board", Status: StagePending},
+		{ID: StageOCP, Label: "OCP-MGMT (SNO)", Detail: "Agent ISO → boot hub → wait install-complete / kubeconfig", Icon: "memory", Status: StagePending},
+		{ID: StageACM, Label: "Install ACM", Detail: "MCE + ACM operators on live MGMT kubeconfig", Icon: "extension", Status: StagePending},
+		{ID: StageSpokes, Label: "OCP-DEPLOY clusters", Detail: "Discovery ISO + ACM spoke bring-up (lab-e2e out of scope)", Icon: "developer_board", Status: StagePending},
 	}
 }
 

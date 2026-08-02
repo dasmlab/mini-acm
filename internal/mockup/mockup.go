@@ -607,6 +607,11 @@ func (s *Store) Dir(id string) string {
 	return filepath.Join(s.root, id)
 }
 
+// DataRoot is the mock-me data directory (parent of mockups/).
+func (s *Store) DataRoot() string {
+	return filepath.Dir(s.root)
+}
+
 // normalize fills MVP-gap defaults and migrates legacy shared cluster gaps.
 func normalize(m *MockUp) {
 	if m.Spec.Genre == "" {

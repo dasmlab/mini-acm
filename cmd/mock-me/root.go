@@ -50,6 +50,7 @@ Auth for hub ACM ops:
 	root.AddCommand(newHubCmd(gf))
 	root.AddCommand(newClusterCmd(gf))
 	root.AddCommand(newServeCmd())
+	root.AddCommand(newLabE2ECmd())
 
 	return root
 }

@@ -133,12 +133,23 @@ virsh list >/dev/null
 command -v virt-install >/dev/null || { echo "virt-install missing — Fix this install-libvirt"; exit 1; }
 NET=%q
 GW=%q
+HUB_IP=%q
+CLUSTER=%q
+BASE_DOMAIN=%q
+API_HOST="api.${CLUSTER}.${BASE_DOMAIN}"
+API_INT_HOST="api-int.${CLUSTER}.${BASE_DOMAIN}"
 if ! virsh net-info "$NET" >/dev/null 2>&1; then
   cat > /tmp/mock-me-net.xml <<EOF
 <network>
   <name>$NET</name>
   <forward mode='nat'/>
   <bridge name='virbr-mm' stp='on' delay='0'/>
+  <dns>
+    <host ip='$HUB_IP'>
+      <hostname>$API_HOST</hostname>
+      <hostname>$API_INT_HOST</hostname>
+    </host>
+  </dns>
   <ip address='$GW' netmask='255.255.255.0'>
     <dhcp>
       <range start='10.77.30.100' end='10.77.30.200'/>
@@ -150,10 +161,19 @@ EOF
   virsh net-start "$NET" || true
   virsh net-autostart "$NET" || true
 fi
+# Ensure API DNS on existing nets (required for bootstrap / oc against kubeconfig).
+virsh net-update "$NET" delete dns-host "<host ip='$HUB_IP'></host>" --live --config 2>/dev/null || true
+virsh net-update "$NET" add dns-host "<host ip='$HUB_IP'><hostname>$API_HOST</hostname><hostname>$API_INT_HOST</hostname></host>" --live --config 2>/dev/null \
+  || virsh net-update "$NET" add-last dns-host "<host ip='$HUB_IP'><hostname>$API_HOST</hostname><hostname>$API_INT_HOST</hostname></host>" --live --config 2>/dev/null \
+  || true
+# Seed-side resolution for podman oc (no sudo): file consumed by OCP wait --add-host.
+mkdir -p /vm-disks/mock-me/work
+printf '%%s %%s %%s\n' "$HUB_IP" "$API_HOST" "$API_INT_HOST" > "/vm-disks/mock-me/work/${CLUSTER}-api-hosts" 2>/dev/null || true
 echo "NET_INFO<<"
 virsh net-info "$NET" || true
+virsh net-dumpxml "$NET" | sed -n '/<dns>/,/<\/dns>/p' || true
 echo ">>NET_INFO"
-`, netName, gw) + ensureGuestsScript(m, guests) + "\necho VINFRA_OK=1\n"
+`, netName, gw, orHubIP(m), orClusterName(m), orBaseDomain(m)) + ensureGuestsScript(m, guests) + "\necho VINFRA_OK=1\n"
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
@@ -223,6 +243,13 @@ func (e *Engine) stageOCP(j *Job) error {
 	}
 	if err := e.inv.WriteRemoteFile(j.InventoryID, sshRemote, sshBytes); err != nil {
 		return err
+	}
+	// Private key (if present next to .pub) lets wait loop SSH to hub for disk/boot checks.
+	if priv := strings.TrimSuffix(m.Spec.Gaps.SSHPublicKeyFile, ".pub"); priv != m.Spec.Gaps.SSHPublicKeyFile {
+		if b, err := os.ReadFile(priv); err == nil && len(b) > 0 {
+			_ = e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/hub/id_install", b)
+			_, _, _ = e.inv.RunScript(j.InventoryID, fmt.Sprintf("chmod 600 %q || true", remoteRoot+"/hub/id_install"))
+		}
 	}
 
 	// Minimal install-config + agent-config for agent-based SNO.
@@ -340,17 +367,36 @@ if [ -n "$ISO" ] && virsh dominfo "$HUB" >/dev/null 2>&1; then
     chcon -t virt_content_t -l s0 "$ISO_POOL" 2>/dev/null || true
   fi
   echo "ISO_POOL=$ISO_POOL"
+  virsh destroy "$HUB" 2>/dev/null || true
   virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
   virsh change-media "$HUB" sda "$ISO_POOL" --insert --config 2>/dev/null \
     || virsh change-media "$HUB" hdc "$ISO_POOL" --insert --config 2>/dev/null \
     || virsh attach-disk "$HUB" "$ISO_POOL" sda --type cdrom --mode readonly --persistent 2>/dev/null \
     || true
+  # Empty qcow boots hd first and powers off; agent ISO must be first.
+  if command -v virt-xml >/dev/null 2>&1; then
+    virt-xml "$HUB" --edit --boot cdrom,hd --define 2>/dev/null \
+      || virt-xml "$HUB" --edit --boot order=cdrom,hd --define 2>/dev/null || true
+    echo "BOOT_ORDER=cdrom,hd"
+  else
+    echo "BOOT_ORDER_WARN=no-virt-xml"
+  fi
   if virsh start "$HUB"; then
-    echo "HUB_BOOTED=1"
+    echo "HUB_START_OK=1"
   else
     echo "HUB_START_FAILED=1"
     virsh start "$HUB" 2>&1 || true
   fi
+  sleep 8
+  STATE=$(virsh --connect qemu:///system domstate "$HUB" 2>/dev/null | tr -d '\n' || true)
+  echo "HUB_STATE=$STATE"
+  sleep 12
+  STATE2=$(virsh --connect qemu:///system domstate "$HUB" 2>/dev/null | tr -d '\n' || true)
+  echo "HUB_STATE_AFTER=$STATE2"
+  if [ "$STATE2" = "running" ]; then
+    echo "HUB_RUNNING=1"
+  fi
+  echo "CONSOLE_HINT=virsh --connect qemu:///system console $HUB"
 fi
 echo "VIRSH_SYSTEM<<"
 virsh --connect qemu:///system list --all || true
@@ -387,17 +433,32 @@ echo OCP_PREP_OK=1
 	if !strings.Contains(out, "OCP_PREP_OK=1") {
 		return fmt.Errorf("OCP incomplete: %s", truncate(out, 800))
 	}
-	if !strings.Contains(out, "HUB_BOOTED=1") {
+	if !strings.Contains(out, "HUB_RUNNING=1") {
 		extra := ""
 		if strings.Contains(out, "HUB_START_FAILED=1") {
 			extra = " (virsh start failed — check qemu can read pool disks/ISO under /vm-disks/mock-me)"
+		} else if strings.Contains(out, "HUB_START_OK=1") {
+			extra = " (started then shut off — boot order must be cdrom,hd with agent ISO inserted)"
 		}
 		return blocked(fmt.Sprintf(
-			"Agent ISO may exist but hub domain %s was not started%s. Guests: virsh --connect qemu:///system list --all",
-			hubName, extra))
+			"Agent ISO may exist but hub domain %s is not staying running%s. Guests: virsh --connect qemu:///system list --all ; console: virsh --connect qemu:///system console %s",
+			hubName, extra, hubName))
+	}
+
+	e.log(j, StageOCP, "hub %s running with agent ISO — waiting for install-complete", hubName)
+	_ = e.SaveJob(j)
+	kcBody, err := e.waitForHubInstall(j, remoteRoot, hubName, hubIP,
+		fmt.Sprintf("api.%s.%s", clusterName, baseDomain),
+		fmt.Sprintf("api-int.%s.%s", clusterName, baseDomain))
+	if err != nil {
+		return err
+	}
+	localKC, err := e.persistHubKubeconfig(j, m.Metadata.Name, kcBody)
+	if err != nil {
+		return fmt.Errorf("persist kubeconfig: %w", err)
 	}
 	e.setStage(j, StageOCP, StageOK,
-		fmt.Sprintf("MGMT VM started — agent ISO attached to %s (SNO install continues on host; kubeconfig not ready yet)", hubName),
+		fmt.Sprintf("OCP-MGMT install complete — hub %s API up; kubeconfig %s", hubName, localKC),
 		out)
 	return nil
 }
@@ -427,33 +488,26 @@ func (e *Engine) stageACM(j *Job) error {
 	}
 	kc := m.Spec.Gaps.HubKubeconfig
 	if isGapPlaceholder(kc) || kc == "" {
-		return blocked("ACM blocked — need a live hub kubeconfig after OCP-MGMT finishes. Set path in Wizard, then Clean + Deploy.")
+		return fmt.Errorf("ACM failed — need a live hub kubeconfig after OCP-MGMT finishes (gap empty)")
 	}
 	if !hubKubeconfigReady(kc) {
-		return blocked(fmt.Sprintf(
-			"ACM blocked — hub kubeconfig not ready yet at %s (SNO install still running, or path missing). Wait for kubeconfig, then Clean + Deploy.",
-			kc))
+		return fmt.Errorf("ACM failed — hub kubeconfig not ready at %s", kc)
 	}
 
 	remoteRoot := remoteWorkRoot(m.Metadata.Name)
-	e.log(j, StageACM, "stage ACM channels → %s/acm (acm=%s mce=%s) kubeconfig=%s",
-		remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel, kc)
+	mceCh := m.Spec.ACM.MCEChannel
+	acmCh := m.Spec.ACM.ACMChannel
+	e.log(j, StageACM, "install MCE+ACM via EE oc → %s/acm (acm=%s mce=%s) kubeconfig=%s",
+		remoteRoot, acmCh, mceCh, kc)
 	_ = e.SaveJob(j)
-	script := fmt.Sprintf(`set -eu
-ROOT=%q
-mkdir -p "$ROOT/acm"
-echo "ACM channel=%s MCE=%s" > "$ROOT/acm/channels.txt"
-echo ACM_STAGED=1
-`, remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel)
 
-	out, _, err := e.inv.RunScript(j.InventoryID, script)
-	if err != nil {
-		return fmt.Errorf("ACM stage: %v (%s)", err, truncate(out, 400))
+	if err := e.installACMOperators(j, remoteRoot, kc, mceCh, acmCh); err != nil {
+		return err
 	}
-	// Operator install against the live API is not automated yet — stop honestly.
-	return blocked(fmt.Sprintf(
-		"ACM blocked — kubeconfig present at %s and channels staged under %s/acm, but operator install is not automated yet. Apply MCE/ACM manually or wait for the next assembly step.",
-		kc, remoteRoot))
+	e.setStage(j, StageACM, StageOK,
+		fmt.Sprintf("MCE + ACM CSVs Available (channels mce=%s acm=%s)", mceCh, acmCh),
+		"")
+	return nil
 }
 
 func (e *Engine) stageSpokes(j *Job) error {
@@ -512,11 +566,11 @@ echo "SPOKE_MISSING=$MISSING"
 	}
 	if missingISO > 0 {
 		return blocked(fmt.Sprintf(
-			"OCP-DEPLOY blocked — %d spoke domain(s) defined (shut off) but %d cluster(s) still need discovery ISO paths (ACM InfraEnv). Not auto-booted. Check: virsh --connect qemu:///system list --all",
+			"OCP-DEPLOY blocked (out of scope for lab-e2e) — %d spoke domain(s) defined (shut off) but %d cluster(s) still need discovery ISO paths (ACM InfraEnv). Not auto-booted. Check: virsh --connect qemu:///system list --all",
 			len(spokeNames), missingISO))
 	}
 	return blocked(fmt.Sprintf(
-		"OCP-DEPLOY blocked — %d spoke domain(s) defined with discovery ISO paths set, but attach/boot + ACM spoke bring-up is not automated yet.",
+		"OCP-DEPLOY blocked (out of scope for lab-e2e) — %d spoke domain(s) defined with discovery ISO paths set, but attach/boot + ACM spoke bring-up is not automated yet.",
 		len(spokeNames)))
 }
 
@@ -543,6 +597,27 @@ func orDash(s string) string {
 		return "(missing)"
 	}
 	return s
+}
+
+func orHubIP(m *mockup.MockUp) string {
+	if m != nil && strings.TrimSpace(m.Spec.Hub.IP) != "" {
+		return strings.TrimSpace(m.Spec.Hub.IP)
+	}
+	return "10.77.30.20"
+}
+
+func orClusterName(m *mockup.MockUp) string {
+	if m != nil && strings.TrimSpace(m.Metadata.Name) != "" {
+		return strings.TrimSpace(m.Metadata.Name)
+	}
+	return "hub"
+}
+
+func orBaseDomain(m *mockup.MockUp) string {
+	if m != nil && strings.TrimSpace(m.Spec.BaseDomain) != "" {
+		return strings.TrimSpace(m.Spec.BaseDomain)
+	}
+	return "lab.example.net"
 }
 
 func safeUser(j *Job) string {

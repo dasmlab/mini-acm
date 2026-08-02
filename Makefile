@@ -71,6 +71,15 @@ image-ee-push: ## Push mock-me-ee to GHCR
 	$(IMAGE_TOOL) tag ghcr.io/dasmlab/mock-me-ee:4.18 ghcr.io/dasmlab/mock-me-ee:latest || true
 	$(IMAGE_TOOL) push ghcr.io/dasmlab/mock-me-ee:latest || true
 
+.PHONY: lab-e2e
+lab-e2e: build ## Headless lab: OCP-MGMT + ACM to done (needs seed host + pull-secret)
+	MOCK_ME_LAB_E2E=1 ./$(BIN_DIR)/$(BINARY_NAME) lab-e2e \
+		--host $${LAB_E2E_HOST:-10.50.0.3} \
+		--user $${LAB_E2E_USER:-dasm} \
+		--identity $${INVENTORY_SSH_KEY:-$$HOME/.ssh/id_ecdsa} \
+		--data-dir $${LAB_E2E_DATA:-/tmp/mock-me-labe2e} \
+		--timeout $${LAB_E2E_TIMEOUT:-2h}
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)

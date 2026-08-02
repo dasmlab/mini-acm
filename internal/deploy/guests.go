@@ -145,12 +145,17 @@ echo "POOL_PATH=$POOL_PATH"
 
 	for _, g := range guests {
 		fmt.Fprintf(&b, "\n# --- guest %s (%s) ---\n", g.Name, g.Role)
-		fmt.Fprintf(&b, "NAME=%q\nCPU=%d\nMEM=%d\nDISK=%d\nMAC=%q\n",
-			g.Name, g.CPU, g.MemoryMiB, g.DiskGiB, g.MAC)
+		boot := "hd,cdrom"
+		if g.Role == "hub" {
+			// Empty disk first = instant power-off; agent ISO must boot first for SNO.
+			boot = "cdrom,hd"
+		}
+		fmt.Fprintf(&b, "NAME=%q\nCPU=%d\nMEM=%d\nDISK=%d\nMAC=%q\nBOOT=%q\n",
+			g.Name, g.CPU, g.MemoryMiB, g.DiskGiB, g.MAC, boot)
 		b.WriteString(`if virsh dominfo "$NAME" >/dev/null 2>&1; then
   echo "EXISTS $NAME ($(virsh domstate "$NAME" 2>/dev/null | tr -d '\n'))"
 else
-  echo "CREATE $NAME cpu=$CPU memMiB=$MEM diskGiB=$DISK mac=$MAC"
+  echo "CREATE $NAME cpu=$CPU memMiB=$MEM diskGiB=$DISK mac=$MAC boot=$BOOT"
   if ! virsh vol-info --pool "$POOL" "${NAME}.qcow2" >/dev/null 2>&1; then
     virsh vol-create-as "$POOL" "${NAME}.qcow2" "${DISK}G" --format qcow2
   fi
@@ -161,14 +166,13 @@ else
     --disk "vol=${POOL}/${NAME}.qcow2,bus=virtio" \
     --network "network=${NET},mac=${MAC},model=virtio" \
     --os-variant rhel9-unknown \
-    --boot hd,cdrom \
+    --boot "$BOOT" \
     --graphics none \
     --noautoconsole \
     --noreboot \
     --import \
     || { echo "virt-install failed for $NAME"; exit 1; }
   virsh destroy "$NAME" 2>/dev/null || true
-  # vol-create-as often leaves root:root 0600 under $HOME — qemu cannot start the domain.
   VOL_PATH=$(virsh vol-path --pool "$POOL" "${NAME}.qcow2" 2>/dev/null || echo "$POOL_PATH/${NAME}.qcow2")
   if [ -f "$VOL_PATH" ]; then
     sudo -n chown qemu:qemu "$VOL_PATH" 2>/dev/null || sudo -n chown 107:107 "$VOL_PATH" 2>/dev/null || chmod 666 "$VOL_PATH" || true
