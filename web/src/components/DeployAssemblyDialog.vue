@@ -60,13 +60,24 @@
           disable
           label="Working on inventory host…"
         />
-        <q-btn
-          v-else
-          color="primary"
-          unelevated
-          label="Close"
-          v-close-popup
-        />
+        <template v-else>
+          <q-btn
+            v-if="showCleanAction"
+            outline
+            color="warning"
+            icon="cleaning_services"
+            label="Clean"
+            class="q-mr-sm"
+            :loading="cleaning"
+            @click="onClean"
+          />
+          <q-btn
+            color="primary"
+            unelevated
+            label="Close"
+            v-close-popup
+          />
+        </template>
       </q-card-actions>
     </q-card>
   </q-dialog>
@@ -74,7 +85,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { getDeployStatus } from 'src/services/api'
+import { Notify } from 'quasar'
+import { getDeployStatus, cleanMockup } from 'src/services/api'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -83,10 +95,11 @@ const props = defineProps({
   /** Initial job from POST /deploy (202) */
   initialJob: { type: Object, default: null },
 })
-const emit = defineEmits(['update:modelValue', 'finished'])
+const emit = defineEmits(['update:modelValue', 'finished', 'cleaned'])
 
 const job = ref(null)
 const consoleEl = ref(null)
+const cleaning = ref(false)
 let timer = null
 
 const placeholderStages = [
@@ -130,6 +143,29 @@ const bannerText = computed(() => {
   }
   return msg
 })
+
+const showCleanAction = computed(() => {
+  if (!props.mockupId) return false
+  return job.value?.status === 'failed' || hasBlockedStage.value
+})
+
+async function onClean() {
+  if (!props.mockupId || cleaning.value) return
+  cleaning.value = true
+  try {
+    const res = await cleanMockup(props.mockupId)
+    Notify.create({
+      type: 'positive',
+      message: res.message || 'Cleaned — Validate/Deploy unlocked',
+    })
+    emit('cleaned', res)
+    emit('update:modelValue', false)
+  } catch (e) {
+    Notify.create({ type: 'negative', message: e.response?.data || e.message })
+  } finally {
+    cleaning.value = false
+  }
+}
 
 const consoleText = computed(() => {
   const lines = job.value?.console

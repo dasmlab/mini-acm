@@ -33,3 +33,19 @@ func TestBuildGuestsIncludesHubAndSpokes(t *testing.T) {
 		t.Error("script should create volumes and call virt-install")
 	}
 }
+
+func TestDestroyGuestsScript(t *testing.T) {
+	m := &mockup.MockUp{
+		Metadata: mockup.Metadata{Name: "lab-rack-1"},
+		Spec: mockup.Spec{
+			Hub: mockup.HubNode{ID: "hub1", Hostname: "hub-sno"},
+		},
+	}
+	g := buildGuests(m)
+	script := destroyGuestsScript(m, g, "/home/dasm/mock-me-work/lab-rack-1")
+	for _, want := range []string{"undefine", "hub-sno", "TEARDOWN_OK=1", "mock-me-work/lab-rack-1"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("destroy script missing %q", want)
+		}
+	}
+}

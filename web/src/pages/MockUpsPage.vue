@@ -165,6 +165,7 @@
       :mockup-name="deployTarget?.metadata?.name || ''"
       :initial-job="deployJob"
       @finished="onDeployFinished"
+      @cleaned="load"
     />
 
     <ValidateWalkDialog
@@ -398,13 +399,13 @@ async function doClean(m) {
 function doDelete(m) {
   Dialog.create({
     title: 'Delete MockUp?',
-    message: `Removes ${m.metadata.name} (${m.metadata.id}) from data/mockups.`,
+    message: `Removes ${m.metadata.name} locally and tears down matching libvirt guests + ~/mock-me-work/${m.metadata.name} on the Inventory host (best-effort).`,
     cancel: true,
     persistent: true,
   }).onOk(async () => {
     try {
       await deleteMockup(m.metadata.id)
-      Notify.create({ type: 'positive', message: 'Deleted.' })
+      Notify.create({ type: 'positive', message: 'Deleted (local + host teardown attempted).' })
       await load()
     } catch (e) {
       Notify.create({ type: 'negative', message: e.response?.data || e.message })

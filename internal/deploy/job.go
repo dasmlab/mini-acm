@@ -77,6 +77,7 @@ type Engine struct {
 	mockups *mockup.Store
 	inv     *inventory.Store
 	mu      sync.Mutex
+	jobMu   sync.Mutex      // serializes deploy-job.json read/write
 	active  map[string]bool // mockUpID → running
 }
 
@@ -104,15 +105,24 @@ func (e *Engine) jobPath(mockUpID string) string {
 }
 
 func (e *Engine) SaveJob(j *Job) error {
+	e.jobMu.Lock()
+	defer e.jobMu.Unlock()
 	j.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	b, err := json.MarshalIndent(j, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(e.jobPath(j.MockUpID), b, 0o644)
+	path := e.jobPath(j.MockUpID)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func (e *Engine) GetJob(mockUpID string) (*Job, error) {
+	e.jobMu.Lock()
+	defer e.jobMu.Unlock()
 	b, err := os.ReadFile(e.jobPath(mockUpID))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -288,4 +298,24 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// TeardownHost removes libvirt guests + volumes for the MockUp and deletes the remote work dir.
+// Best-effort: local MockUp delete should still proceed if SSH fails.
+func (e *Engine) TeardownHost(m *mockup.MockUp, inventoryID string) (string, error) {
+	if m == nil || inventoryID == "" || e.inv == nil {
+		return "", nil
+	}
+	guests := buildGuests(m)
+	user := "dasm"
+	if h, err := e.inv.Get(inventoryID); err == nil && h != nil && h.SSHUser != "" {
+		user = h.SSHUser
+	}
+	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", user, m.Metadata.Name)
+	script := destroyGuestsScript(m, guests, remoteRoot)
+	out, _, err := e.inv.RunScript(inventoryID, script)
+	if err != nil {
+		return out, fmt.Errorf("host teardown: %v (%s)", err, truncate(out, 400))
+	}
+	return out, nil
 }

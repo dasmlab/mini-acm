@@ -176,3 +176,43 @@ echo ">>POOL_VOLS"
 `)
 	return b.String()
 }
+
+// destroyGuestsScript undefines MockUp domains and removes their pool volumes + remote work dir.
+func destroyGuestsScript(m *mockup.MockUp, guests []guestSpec, remoteWorkRoot string) string {
+	pool := m.Spec.InfraHost.StoragePool
+	if pool == "" {
+		pool = "default"
+	}
+	var b strings.Builder
+	b.WriteString("set -eu\n")
+	b.WriteString("export LIBVIRT_DEFAULT_URI=\"${LIBVIRT_DEFAULT_URI:-qemu:///system}\"\n")
+	fmt.Fprintf(&b, "POOL=%q\n", pool)
+	fmt.Fprintf(&b, "WORK=%q\n", remoteWorkRoot)
+	b.WriteString(`echo "TEARDOWN_START"
+`)
+	for _, g := range guests {
+		fmt.Fprintf(&b, "NAME=%q\n", g.Name)
+		b.WriteString(`if virsh dominfo "$NAME" >/dev/null 2>&1; then
+  echo "DESTROY $NAME"
+  virsh destroy "$NAME" 2>/dev/null || true
+  virsh undefine "$NAME" --remove-all-storage 2>/dev/null \
+    || virsh undefine "$NAME" 2>/dev/null \
+    || true
+fi
+if virsh vol-info --pool "$POOL" "${NAME}.qcow2" >/dev/null 2>&1; then
+  echo "VOL_DELETE ${NAME}.qcow2"
+  virsh vol-delete --pool "$POOL" "${NAME}.qcow2" 2>/dev/null || true
+fi
+`)
+	}
+	b.WriteString(`if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+  echo "RM_WORK $WORK"
+  rm -rf "$WORK"
+fi
+echo "VIRSH_AFTER<<"
+virsh list --all || true
+echo ">>VIRSH_AFTER"
+echo TEARDOWN_OK=1
+`)
+	return b.String()
+}

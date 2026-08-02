@@ -285,8 +285,17 @@ hosts:
         address:
         - ip: %s
           prefix-length: 24
-        gateway: %s
-`, clusterName, hubIP, hubName, hubMAC, hubMAC, hubIP, orGateway(m))
+    dns-resolver:
+      config:
+        server:
+        - %s
+    routes:
+      config:
+      - destination: 0.0.0.0/0
+        next-hop-address: %s
+        next-hop-interface: enp1s0
+        table-id: 254
+`, clusterName, hubIP, hubName, hubMAC, hubMAC, hubIP, orDNS(m), orGateway(m))
 
 	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/hub/install-config.yaml", []byte(ic)); err != nil {
 		return err
@@ -347,13 +356,15 @@ echo OCP_PREP_OK=1
 		reason := "openshift-install agent create image failed"
 		low := strings.ToLower(out)
 		switch {
-		case strings.Contains(low, "nmstatectl"):
+		case strings.Contains(low, "unknown field") || strings.Contains(low, "not valid networkstate"):
+			reason = "agent-config nmstate invalid (check static network YAML)"
+		case strings.Contains(low, `exec: "nmstatectl"`) || strings.Contains(low, "nmstatectl: executable file not found"):
 			reason = "EE image missing nmstatectl (rebuild/push mock-me-ee with nmstate)"
 		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret") || strings.Contains(low, "unauthorized"):
 			reason = "pull-secret invalid or unauthorized for release image"
 		}
 		return blocked(fmt.Sprintf(
-			"OCP-MGMT blocked — guest domains exist (shut off) but agent ISO was not created (%s). Hub %s not started. Fix EE/pull-secret, then Clean + Deploy. Check: virsh --connect qemu:///system list --all",
+			"OCP-MGMT blocked — guest domains exist (shut off) but agent ISO was not created (%s). Hub %s not started. Fix EE/pull-secret/agent-config, then Clean + Deploy. Check: virsh --connect qemu:///system list --all",
 			reason, hubName))
 	}
 	if !strings.Contains(out, "OCP_PREP_OK=1") {
@@ -375,6 +386,13 @@ func orGateway(m *mockup.MockUp) string {
 		return m.Spec.Network.Gateway
 	}
 	return "10.77.30.1"
+}
+
+func orDNS(m *mockup.MockUp) string {
+	if m.Spec.Network.DNS != "" {
+		return m.Spec.Network.DNS
+	}
+	return orGateway(m)
 }
 
 func (e *Engine) stageACM(j *Job) error {

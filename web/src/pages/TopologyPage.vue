@@ -333,6 +333,7 @@
       :mockup-name="mockup?.metadata?.name || ''"
       :initial-job="deployJob"
       @finished="onDeployFinished"
+      @cleaned="load"
     />
 
     <ValidateWalkDialog

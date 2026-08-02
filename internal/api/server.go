@@ -515,7 +515,19 @@ func (s *Server) resolveInventoryHost(m *mockup.MockUp) (*inventory.MachineHost,
 }
 
 func (s *Server) deleteMockup(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.Delete(chi.URLParam(r, "id")); err != nil {
+	id := chi.URLParam(r, "id")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	// Best-effort: remove libvirt guests + remote work dir for this MockUp name.
+	if s.deploy != nil && s.inventory != nil {
+		if host, reason := s.resolveInventoryHost(m); host != nil && reason == "" {
+			_, _ = s.deploy.TeardownHost(m, host.ID)
+		}
+	}
+	if err := s.store.Delete(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
