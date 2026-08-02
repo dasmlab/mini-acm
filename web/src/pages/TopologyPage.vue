@@ -51,6 +51,17 @@
       />
       <q-btn
         outline
+        color="teal-8"
+        icon="payments"
+        label="Cost me"
+        class="q-mr-sm"
+        :loading="costing"
+        @click="onCostMe"
+      >
+        <q-tooltip>Estimate via cheapcloud COST-ME (no live Azure create)</q-tooltip>
+      </q-btn>
+      <q-btn
+        outline
         color="orange-9"
         icon="rocket_launch"
         label="Deploy"
@@ -341,6 +352,15 @@
       :title="mockup?.metadata?.name || 'Topology'"
       :result="validateResult"
     />
+
+    <CostMeDialog
+      v-model="costOpen"
+      :title="mockup?.metadata?.name || 'MockUp'"
+      :loading="costing"
+      :error="costError"
+      :url="costUrl"
+      :report="costReport"
+    />
   </q-page>
 </template>
 
@@ -351,8 +371,9 @@ import TopologyCanvas from 'src/components/TopologyCanvas.vue'
 import NodeEditDialog from 'src/components/NodeEditDialog.vue'
 import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
+import CostMeDialog from 'src/components/CostMeDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, deployMockup, cleanMockup, listInventory, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, costMeMockup, deployMockup, cleanMockup, listInventory, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
@@ -365,6 +386,11 @@ const loading = ref(true)
 const saving = ref(false)
 const deriving = ref(false)
 const validating = ref(false)
+const costing = ref(false)
+const costOpen = ref(false)
+const costError = ref('')
+const costUrl = ref('')
+const costReport = ref(null)
 const deploying = ref(false)
 const cleaning = ref(false)
 const deployOpen = ref(false)
@@ -916,6 +942,32 @@ async function onValidate() {
     Notify.create({ type: 'negative', message: e.response?.data || e.message })
   } finally {
     validating.value = false
+  }
+}
+
+async function onCostMe() {
+  costing.value = true
+  costError.value = ''
+  costReport.value = null
+  costUrl.value = ''
+  costOpen.value = true
+  try {
+    await persistQuiet()
+    const res = await costMeMockup(props.id)
+    costUrl.value = res.url || ''
+    if (res.report) {
+      costReport.value = res.report
+    } else if (res.error) {
+      costError.value = res.error
+    } else {
+      costReport.value = res
+    }
+  } catch (e) {
+    const data = e.response?.data
+    costError.value = typeof data === 'string' ? data : (data?.error || e.message)
+    costUrl.value = data?.url || ''
+  } finally {
+    costing.value = false
   }
 }
 

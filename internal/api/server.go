@@ -13,20 +13,22 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/dasmlab/mock-me/internal/auth"
+	"github.com/dasmlab/mock-me/internal/cheapcloud"
 	"github.com/dasmlab/mock-me/internal/deploy"
 	"github.com/dasmlab/mock-me/internal/inventory"
 	"github.com/dasmlab/mock-me/internal/mockup"
 )
 
 type Server struct {
-	store     *mockup.Store
-	inventory *inventory.Store
-	deploy    *deploy.Engine
-	auth      *auth.Service
-	dataDir   string
-	buildVer  string
-	static    http.Handler
-	router    chi.Router
+	store      *mockup.Store
+	inventory  *inventory.Store
+	deploy     *deploy.Engine
+	auth       *auth.Service
+	cheapcloud *cheapcloud.Client
+	dataDir    string
+	buildVer   string
+	static     http.Handler
+	router     chi.Router
 }
 
 func New(store *mockup.Store, inv *inventory.Store, authSvc *auth.Service, dataDir, buildVer string, static http.Handler) *Server {
@@ -35,7 +37,8 @@ func New(store *mockup.Store, inv *inventory.Store, authSvc *auth.Service, dataD
 	}
 	s := &Server{
 		store: store, inventory: inv, deploy: deploy.NewEngine(store, inv),
-		auth: authSvc, dataDir: dataDir, buildVer: buildVer, static: static,
+		auth: authSvc, cheapcloud: cheapcloud.NewFromEnv(),
+		dataDir: dataDir, buildVer: buildVer, static: static,
 	}
 	s.router = s.routes()
 	return s
@@ -93,6 +96,7 @@ func (s *Server) routes() chi.Router {
 			r.Post("/mockups/{id}/derive", s.derive)
 			r.Post("/mockups/{id}/seed-dev-lab", s.seedDevLab)
 			r.Post("/mockups/{id}/validate", s.validateMockup)
+			r.Post("/mockups/{id}/cost-me", s.costMeMockup)
 			r.Post("/mockups/{id}/deploy", s.deployMockup)
 			r.Get("/mockups/{id}/deploy", s.getDeploy)
 			r.Post("/mockups/{id}/clean", s.cleanMockup)
@@ -342,6 +346,42 @@ func (s *Server) validateMockup(w http.ResponseWriter, r *http.Request) {
 		"summary":          res.Summary,
 		"promoteSupported": res.PromoteSupported,
 		"mockup":           m,
+	})
+}
+
+func (s *Server) costMeMockup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.cheapcloud == nil {
+		http.Error(w, "cheapcloud client not configured", http.StatusServiceUnavailable)
+		return
+	}
+	register := r.URL.Query().Get("register") == "1" || r.URL.Query().Get("register") == "true"
+	req := cheapcloud.Request{
+		ProductID:         cheapcloud.ProductID(m),
+		MockupID:          m.Metadata.ID,
+		RegisterFootprint: register,
+		Targets:           cheapcloud.TargetsFromMockUp(m),
+	}
+	report, err := s.cheapcloud.CostMe(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error":   err.Error(),
+			"targets": req.Targets,
+			"url":     s.cheapcloud.BaseURL,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"targets": req.Targets,
+		"url":     s.cheapcloud.BaseURL,
+		"report":  report,
+		"mockup":  m,
 	})
 }
 

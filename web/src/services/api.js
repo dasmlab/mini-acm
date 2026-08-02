@@ -123,6 +123,11 @@ export async function cleanMockup(id) {
   return data
 }
 
+export async function costMeMockup(id) {
+  const { data } = await api.post(`/mockups/${id}/cost-me`, undefined, { timeout: 60_000 })
+  return data
+}
+
 export async function listInventory() {
   const { data } = await api.get('/inventory')
   return data

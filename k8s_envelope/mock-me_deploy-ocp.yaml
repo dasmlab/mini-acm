@@ -92,6 +92,9 @@ spec:
             #   --from-file=pull-secret.json=<(oc -n openshift-config get secret pull-secret -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d)
             - name: PULL_SECRET_FILE
               value: /var/run/secrets/openshift/pull-secret
+            # cheapcloud COST-ME (OCP Route — not HAProxy basic-auth host)
+            - name: CHEAPCLOUD_URL
+              value: "https://cheapcloud-dasmlab.apps.2026-prod-1.ocp.dasmlab.org"
           volumeMounts:
             - name: mock-me-data
               mountPath: /data
