@@ -1,124 +1,183 @@
 <template>
-  <q-page padding class="wide">
-    <div class="row items-center q-mb-md">
-      <div class="col">
-        <div class="text-h5">Inventory</div>
-        <div class="text-caption text-grey-6">
-          MACHINE-HOST targets — Probe (red / yellow / green) then Fix this when packages or services are missing.
+  <q-page class="inventory-page" padding>
+    <header class="page-head">
+      <div>
+        <p class="page-kicker">MACHINE-HOST targets</p>
+        <div class="title-row">
+          <h1 class="page-title">Inventory</h1>
+          <q-btn flat dense round icon="help_outline" color="blue-grey-7" aria-label="About inventory">
+            <q-menu anchor="bottom left" self="top left" max-width="360px">
+              <div class="help-menu">
+                <div class="help-title">Probe → Fix → Deploy</div>
+                <p>
+                  <b>unreachable</b> — no TCP/SSH.
+                  <b>partial</b> — SSH OK, missing libvirt.
+                  <b>libvirt ready</b> — can orchestrate guests.
+                  <b>deploy blocked</b> — need podman + curated mock-me-ee.
+                </p>
+                <p>
+                  Assume subscribed host + sudo. Fix installs libvirt/podman and pulls
+                  <code>mock-me-ee</code>. Use <b>Stretched</b> when the cluster must reach the host via VPN.
+                </p>
+              </div>
+            </q-menu>
+          </q-btn>
         </div>
+        <p class="page-lead">Probe readiness, Fix gaps, then Deploy from a MockUp.</p>
       </div>
-      <q-btn color="primary" icon="add" label="Add host" @click="openCreate" />
+      <q-btn color="primary" unelevated icon="add" label="Add host" @click="openCreate" />
+    </header>
+
+    <div v-if="loading" class="row justify-center q-my-xl">
+      <q-spinner size="3em" color="primary" />
     </div>
 
-    <div class="row q-gutter-sm q-mb-md text-caption items-center">
-      <q-badge color="negative">unreachable</q-badge>
-      <span class="text-grey-7">no TCP / SSH</span>
-      <q-badge color="warning">partial</q-badge>
-      <span class="text-grey-7">SSH OK · missing libvirt</span>
-      <q-badge color="positive">libvirt ready</q-badge>
-      <span class="text-grey-7">can orchestrate infra</span>
-      <q-badge color="orange-9">deploy blocked</q-badge>
-      <span class="text-grey-7">need podman + curated mock-me-ee (openshift-install in container)</span>
+    <div v-else-if="!hosts.length" class="empty-state">
+      <q-icon name="dns" size="56px" color="blue-grey-5" />
+      <div class="empty-title">No hosts yet</div>
+      <div class="empty-sub">Seed host should appear on first load, or add one manually.</div>
     </div>
 
-    <div v-if="loading" class="row justify-center q-my-xl"><q-spinner size="3em" color="primary" /></div>
-
-    <q-list v-else bordered class="rounded-borders bg-white">
-      <q-item v-for="h in hosts" :key="h.id" class="q-py-md" :class="{ 'deploy-blocked-row': isDeployBlocked(h) }">
-        <q-item-section avatar>
-          <q-avatar :color="statusColor(h)" text-color="white" :icon="statusIcon(h)" />
-        </q-item-section>
-        <q-item-section>
-          <q-item-label class="text-weight-medium">
-            {{ h.name }}
-            <q-badge v-if="h.seed" color="primary" outline class="q-ml-sm">SEED</q-badge>
-            <q-badge :color="statusColor(h)" class="q-ml-sm">{{ statusLabel(h) }}</q-badge>
-            <q-badge v-if="isDeployBlocked(h)" color="orange-9" class="q-ml-sm">deploy blocked</q-badge>
-            <q-badge v-else-if="h.status === 'reachable'" color="teal-8" class="q-ml-sm">deploy EE ok</q-badge>
-          </q-item-label>
-          <q-item-label caption>
-            {{ h.sshUser }}@{{ effectiveHost(h) }}:{{ h.sshPort || 22 }}
-            <q-badge v-if="h.stretched" color="deep-purple" outline dense class="q-ml-xs">stretched</q-badge>
-            <span v-if="h.identityFile"> · key {{ h.identityFile }}</span>
-          </q-item-label>
-          <q-item-label caption v-if="h.stretched && h.sshHost" class="text-grey-6">
-            LAN {{ h.sshHost }} · via VPN {{ h.stretchedHost }}
-          </q-item-label>
-          <q-item-label caption v-if="h.statusMessage" class="q-mt-xs">{{ h.statusMessage }}</q-item-label>
-          <q-banner
-            v-if="isDeployBlocked(h)"
-            dense rounded
-            class="q-mt-sm bg-orange-1 text-orange-10"
-          >
-            <template #avatar><q-icon name="block" color="orange-9" /></template>
-            OCP Deploy needs the curated <code>mock-me-ee</code> image (openshift-install + oc inside the container).
-            Host only needs podman — use <b>Fix this</b> → ensure-mock-me-ee, then Probe again.
-          </q-banner>
-          <div v-if="h.issues?.length" class="q-mt-sm">
-            <div
-              v-for="iss in h.issues"
-              :key="iss.id"
-              class="text-caption q-mb-xs"
-              :class="iss.id === 'openshift-install-missing' || iss.severity === 'error' ? 'text-orange-10 text-weight-medium' : 'text-grey-8'"
-            >
-              · {{ iss.message }}
-              <q-badge v-if="iss.fixable" dense color="warning" outline class="q-ml-xs">fixable</q-badge>
+    <div v-else class="host-grid">
+      <article
+        v-for="h in hosts"
+        :key="h.id"
+        class="host-card"
+        :class="[
+          `status-${h.status || 'unknown'}`,
+          { 'deploy-blocked': isDeployBlocked(h) },
+        ]"
+      >
+        <div class="card-accent" />
+        <div class="card-body">
+          <div class="card-top">
+            <q-avatar :color="statusColor(h)" text-color="white" :icon="statusIcon(h)" size="40px" />
+            <div class="card-identity">
+              <div class="name-row">
+                <h2 class="card-name">{{ h.name }}</h2>
+                <q-badge v-if="h.seed" color="primary" outline dense>SEED</q-badge>
+              </div>
+              <div class="chip-row">
+                <q-badge :color="statusColor(h)">{{ statusLabel(h) }}</q-badge>
+                <q-badge v-if="isDeployBlocked(h)" color="orange-9">deploy blocked</q-badge>
+                <q-badge v-else-if="h.status === 'reachable'" color="teal-8">EE ok</q-badge>
+              </div>
+            </div>
+            <div class="icon-tools">
+              <q-btn
+                v-if="(h.issues || []).length"
+                flat
+                dense
+                round
+                :icon="issueIcon(h)"
+                :color="issueColor(h)"
+                aria-label="Host issues"
+              >
+                <q-badge
+                  v-if="h.issues.length > 1"
+                  floating
+                  color="orange-9"
+                  :label="String(h.issues.length)"
+                />
+                <q-menu anchor="bottom right" self="top right" max-width="380px">
+                  <div class="detail-menu">
+                    <div class="help-title">Issues</div>
+                    <div
+                      v-for="iss in h.issues"
+                      :key="iss.id"
+                      class="issue-line"
+                      :class="{ error: iss.severity === 'error' || iss.id === 'openshift-install-missing' }"
+                    >
+                      {{ iss.message }}
+                      <q-badge v-if="iss.fixable" dense color="warning" outline class="q-ml-xs">fixable</q-badge>
+                    </div>
+                    <div v-if="isDeployBlocked(h)" class="issue-line warn q-mt-sm">
+                      OCP Deploy needs curated <code>mock-me-ee</code> (openshift-install in container).
+                      Use Fix this → ensure-mock-me-ee, then Probe again.
+                    </div>
+                  </div>
+                </q-menu>
+                <q-tooltip>Issues</q-tooltip>
+              </q-btn>
+              <q-btn flat dense round icon="help_outline" color="blue-grey-6" aria-label="Host details">
+                <q-menu anchor="bottom right" self="top right" max-width="420px">
+                  <div class="detail-menu">
+                    <div class="help-title">Host details</div>
+                    <div class="fact-line"><b>Endpoint</b> {{ h.sshUser }}@{{ effectiveHost(h) }}:{{ h.sshPort || 22 }}</div>
+                    <div v-if="h.stretched && h.sshHost" class="fact-line">
+                      <b>LAN</b> {{ h.sshHost }} · <b>VPN</b> {{ h.stretchedHost }}
+                    </div>
+                    <div v-if="h.identityFile" class="fact-line"><b>identity</b> {{ h.identityFile }}</div>
+                    <div v-if="h.statusMessage" class="fact-line status-msg">{{ h.statusMessage }}</div>
+                    <q-separator class="q-my-sm" />
+                    <div v-if="h.facts && Object.keys(h.facts).length" class="facts-grid">
+                      <div v-for="(v, k) in h.facts" :key="k" class="fact-line">
+                        <b>{{ k }}</b> {{ v }}
+                      </div>
+                    </div>
+                    <div v-else class="text-caption text-grey-6">No probe facts yet — run Probe.</div>
+                  </div>
+                </q-menu>
+                <q-tooltip>Details</q-tooltip>
+              </q-btn>
             </div>
           </div>
-          <div v-if="h.facts && Object.keys(h.facts).length" class="q-mt-sm text-caption text-grey-7">
-            <span v-for="(v, k) in h.facts" :key="k" class="q-mr-md" :class="{ 'text-orange-10 text-weight-bold': k === 'openshiftInstall' && v === 'missing' }">
-              <b>{{ k }}</b>: {{ v }}
-            </span>
+
+          <div class="card-endpoint">
+            {{ h.sshUser }}@{{ effectiveHost(h) }}:{{ h.sshPort || 22 }}
+            <q-badge v-if="h.stretched" color="deep-purple" outline dense class="q-ml-xs">stretched</q-badge>
           </div>
-        </q-item-section>
-        <q-item-section side>
-          <div class="column q-gutter-sm">
+
+          <div class="card-actions">
             <q-btn
-              unelevated color="primary" icon="sensors" label="Probe"
+              unelevated
+              color="primary"
+              size="sm"
+              icon="sensors"
+              label="Probe"
               :loading="probing === h.id"
               @click="onProbe(h)"
             />
             <q-btn
               v-if="hasFixable(h)"
-              unelevated color="warning" text-color="dark" icon="build" label="Fix this"
+              unelevated
+              color="warning"
+              text-color="dark"
+              size="sm"
+              icon="build"
+              label="Fix"
               :loading="fixing === h.id"
               @click="openFix(h)"
             />
             <q-btn
-              flat dense
+              flat
+              dense
+              size="sm"
               :color="h.stretched ? 'deep-purple' : 'grey-8'"
               :icon="h.stretched ? 'vpn_lock' : 'vpn_key_off'"
-              :label="h.stretched ? 'Stretched on' : 'Stretched'"
+              :label="h.stretched ? 'Stretched' : 'Stretch'"
               :loading="toggling === h.id"
               @click="onToggleStretched(h)"
             >
               <q-tooltip>
-                Cross a network boundary via VPN IP (e.g. WireGuard). LAN stays on file; probe/fix use stretched host when on.
+                Cross a network boundary via VPN IP. LAN stays on file; probe uses stretched host when on.
               </q-tooltip>
             </q-btn>
-            <q-btn flat dense color="grey-8" icon="edit" label="Edit" @click="openEdit(h)" />
+            <q-btn flat dense size="sm" color="grey-8" icon="edit" label="Edit" @click="openEdit(h)" />
             <q-btn
-              flat dense color="negative" icon="delete" label="Remove"
+              flat
+              dense
+              size="sm"
+              color="negative"
+              icon="delete"
+              label="Remove"
               :disable="!!h.seed"
               @click="onDelete(h)"
             />
           </div>
-        </q-item-section>
-      </q-item>
-      <q-item v-if="!hosts.length">
-        <q-item-section class="text-grey-6">No hosts yet — seed should appear on first load.</q-item-section>
-      </q-item>
-    </q-list>
-
-    <q-banner class="q-mt-lg bg-grey-2 rounded-borders" dense>
-      <template #avatar><q-icon name="info" color="primary" /></template>
-      Assume the host is subscribed and your SSH user can sudo (password optional in Fix).
-      Fix installs <code>libvirt</code> / <code>podman</code> on the host, and pulls curated
-      <code>mock-me-ee</code> (openshift-install + oc in the container — not on the host PATH).
-      As-a-service probes need reachability + mounted identity (<code>INVENTORY_SSH_KEY</code>).
-      Use <b>Stretched</b> when the cluster sits behind a boundary and must hit the host’s VPN address
-      (WireGuard install on the MACHINE-HOST is a separate stretch step — not automated here yet).
-    </q-banner>
+        </div>
+      </article>
+    </div>
 
     <q-dialog v-model="formOpen" persistent>
       <q-card style="min-width: 420px">
@@ -128,23 +187,40 @@
         <q-card-section class="q-pt-none">
           <q-input v-model="form.name" outlined dense label="Name" class="q-mb-sm" />
           <q-input v-model="form.sshUser" outlined dense label="SSH user" class="q-mb-sm" />
-          <q-input v-model="form.sshHost" outlined dense label="SSH host / IP (LAN)" class="q-mb-sm"
-            hint="e.g. 192.168.1.142 — used when Stretched is off" />
-          <q-toggle v-model="form.stretched" color="deep-purple" label="Stretched (VPN reachability)"
-            class="q-mb-xs" />
+          <q-input
+            v-model="form.sshHost"
+            outlined
+            dense
+            label="SSH host / IP (LAN)"
+            class="q-mb-sm"
+            hint="e.g. 192.168.1.142 — used when Stretched is off"
+          />
+          <q-toggle
+            v-model="form.stretched"
+            color="deep-purple"
+            label="Stretched (VPN reachability)"
+            class="q-mb-xs"
+          />
           <div class="text-caption text-grey-6 q-mb-sm">
             When the cluster cannot reach LAN — probe via WireGuard / VPN address instead.
           </div>
           <q-input
             v-model="form.stretchedHost"
-            outlined dense
+            outlined
+            dense
             label="Stretched host / VPN IP"
             class="q-mb-sm"
-            hint="e.g. 10.50.0.3 — optional until you need the boundary-crossing path"
+            hint="e.g. 10.50.0.3"
           />
           <q-input v-model.number="form.sshPort" type="number" outlined dense label="SSH port" class="q-mb-sm" />
-          <q-input v-model="form.identityFile" outlined dense label="Identity file (private key path)" class="q-mb-sm"
-            hint="~/.ssh/id_ecdsa or INVENTORY_SSH_KEY" />
+          <q-input
+            v-model="form.identityFile"
+            outlined
+            dense
+            label="Identity file (private key path)"
+            class="q-mb-sm"
+            hint="~/.ssh/id_ecdsa or INVENTORY_SSH_KEY"
+          />
           <q-input v-model="form.notes" outlined dense type="textarea" autogrow label="Notes" />
         </q-card-section>
         <q-card-actions align="right">
@@ -282,7 +358,6 @@ function isDeployBlocked(h) {
   const ee = String(h.facts?.mockMeEE || '').trim()
   if (ee === 'ready') return false
   const oi = String(h.facts?.openshiftInstall || '').trim()
-  // Legacy: host PATH installer still unblocks Deploy
   if (oi && oi !== 'missing' && oi !== 'ee') return false
   if (oi === 'ee') return false
   return true
@@ -290,6 +365,15 @@ function isDeployBlocked(h) {
 
 function hasFixable(h) {
   return (h.issues || []).some((i) => i.fixable)
+}
+
+function issueIcon(h) {
+  const errs = (h.issues || []).some((i) => i.severity === 'error' || i.id === 'openshift-install-missing')
+  return errs || isDeployBlocked(h) ? 'error_outline' : 'warning'
+}
+
+function issueColor(h) {
+  return issueIcon(h) === 'error_outline' ? 'orange-9' : 'warning'
 }
 
 async function load() {
@@ -451,10 +535,248 @@ onMounted(load)
 </script>
 
 <style scoped>
-.wide { max-width: 1100px; margin: 0 auto; }
-.deploy-blocked-row {
-  background: #fff8f1;
+.inventory-page {
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(21, 101, 192, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 131, 143, 0.08), transparent 50%),
+    #eef2f5;
+  min-height: calc(100vh - 100px);
+  max-width: none;
+  margin: 0;
+  padding-bottom: 2.5rem !important;
 }
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.page-kicker {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1565c0;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #0d2137;
+  line-height: 1.15;
+}
+
+.page-lead {
+  margin: 0.45rem 0 0;
+  max-width: 36rem;
+  color: #455a64;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.help-menu,
+.detail-menu {
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #37474f;
+}
+
+.help-title {
+  font-weight: 800;
+  color: #0d2137;
+  margin-bottom: 0.45rem;
+}
+
+.help-menu p {
+  margin: 0 0 0.55rem;
+}
+
+.help-menu p:last-child {
+  margin-bottom: 0;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3.5rem 1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #cfd8dc;
+}
+
+.empty-title {
+  margin-top: 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #263238;
+}
+
+.empty-sub {
+  margin-top: 0.35rem;
+  color: #607d8b;
+  font-size: 0.92rem;
+}
+
+.host-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.1rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.host-card {
+  position: relative;
+  display: flex;
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid #b0bec5;
+  box-shadow: 0 2px 0 rgba(13, 33, 55, 0.04), 0 10px 28px rgba(13, 33, 55, 0.08);
+  overflow: hidden;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.host-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 0 rgba(13, 33, 55, 0.05), 0 16px 36px rgba(13, 33, 55, 0.12);
+}
+
+.host-card.deploy-blocked {
+  border-color: #ffb74d;
+  background: linear-gradient(180deg, #fff8f1 0%, #fff 45%);
+}
+
+.host-card.status-unreachable {
+  border-color: #e57373;
+}
+
+.host-card.status-partial {
+  border-color: #ffb74d;
+}
+
+.card-accent {
+  width: 6px;
+  flex-shrink: 0;
+  background: #607d8b;
+}
+
+.status-reachable .card-accent { background: #2e7d32; }
+.status-partial .card-accent { background: #ef6c00; }
+.status-unreachable .card-accent { background: #c62828; }
+.deploy-blocked .card-accent { background: #ef6c00; }
+
+.card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 1rem 1.05rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.card-identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.card-name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0d2137;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+.icon-tools {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  flex-shrink: 0;
+}
+
+.card-endpoint {
+  font-size: 0.82rem;
+  color: #546e7a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #cfd8dc;
+}
+
+.fact-line,
+.issue-line {
+  margin: 0.25rem 0;
+  word-break: break-word;
+}
+
+.issue-line.error {
+  color: #e65100;
+  font-weight: 600;
+}
+
+.issue-line.warn {
+  color: #e65100;
+}
+
+.fact-line.status-msg {
+  color: #455a64;
+  margin-bottom: 0.35rem;
+}
+
+.facts-grid {
+  max-height: 240px;
+  overflow: auto;
+}
+
 .fix-log {
   margin: 0;
   white-space: pre-wrap;
@@ -462,5 +784,10 @@ onMounted(load)
   font-size: 11px;
   max-height: 240px;
   overflow: auto;
+}
+
+@media (max-width: 600px) {
+  .page-title { font-size: 1.65rem; }
+  .host-grid { grid-template-columns: 1fr; }
 }
 </style>

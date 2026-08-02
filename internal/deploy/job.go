@@ -90,12 +90,12 @@ func NewEngine(mockups *mockup.Store, inv *inventory.Store) *Engine {
 
 func defaultStages() []Stage {
 	return []Stage{
-		{ID: StageEE, Label: "Execution environment", Detail: "Curated mock-me-ee (openshift-install + oc) via podman on inventory host", Icon: "precision_manufacturing", Status: StagePending},
-		{ID: StageGenerate, Label: "Generate objects", Detail: "ISO/config artifacts & derived YAML for bootable guests", Icon: "description", Status: StagePending},
-		{ID: StageVInfra, Label: "Build vInfra", Detail: "libvirt network, storage pool, and vHost definitions", Icon: "lan", Status: StagePending},
-		{ID: StageOCP, Label: "Deploy OCP + appliances", Detail: "OCP-MGMT (SNO) and VyOS / edge appliances", Icon: "memory", Status: StagePending},
-		{ID: StageACM, Label: "Install ACM", Detail: "MCE / ACM operators on the management cluster", Icon: "extension", Status: StagePending},
-		{ID: StageSpokes, Label: "Deployment clusters", Detail: "ACM-managed OCP-DEPLOY spokes + discovery ISO attach", Icon: "developer_board", Status: StagePending},
+		{ID: StageEE, Label: "Execution environment", Detail: "Curated mock-me-ee via podman on inventory host", Icon: "precision_manufacturing", Status: StagePending},
+		{ID: StageGenerate, Label: "Generate objects", Detail: "Stage YAML / secrets for the rack", Icon: "description", Status: StagePending},
+		{ID: StageVInfra, Label: "Define lab VMs", Detail: "libvirt pool, net, gateway + MGMT + spoke domains", Icon: "lan", Status: StagePending},
+		{ID: StageOCP, Label: "OCP-MGMT (SNO)", Detail: "Agent ISO → start hub VM (install still runs on host)", Icon: "memory", Status: StagePending},
+		{ID: StageACM, Label: "Install ACM", Detail: "Operators on live MGMT kubeconfig", Icon: "extension", Status: StagePending},
+		{ID: StageSpokes, Label: "OCP-DEPLOY clusters", Detail: "Discovery ISO + ACM spoke bring-up", Icon: "developer_board", Status: StagePending},
 	}
 }
 
@@ -225,8 +225,10 @@ func (e *Engine) setStage(j *Job, id, status, message, log string) {
 		e.log(j, id, "▶ %s", message)
 	case StageOK:
 		e.log(j, id, "✓ %s", message)
-	case StageFailed, StageBlocked:
+	case StageFailed:
 		e.log(j, id, "✗ %s", message)
+	case StageBlocked:
+		e.log(j, id, "⏸ %s", message)
 	}
 	_ = e.SaveJob(j)
 }
@@ -259,11 +261,15 @@ func (e *Engine) run(j *Job) {
 				status = StageBlocked
 			}
 			e.setStage(j, step.id, status, msg, msg)
-			e.finish(j, JobFailed, fmt.Sprintf("Stopped at %s: %s", step.id, msg))
+			prefix := "Stopped at"
+			if status == StageBlocked {
+				prefix = "Blocked at"
+			}
+			e.finish(j, JobFailed, fmt.Sprintf("%s %s: %s", prefix, step.id, msg))
 			return
 		}
 	}
-	e.finish(j, JobSucceeded, fmt.Sprintf("Assembly complete on %s — OCP/ACM path finished or queued on host.", j.HostName))
+	e.finish(j, JobSucceeded, fmt.Sprintf("Assembly complete on %s — OCP-MGMT, ACM, and deploy clusters finished.", j.HostName))
 }
 
 type blockedError struct{ msg string }

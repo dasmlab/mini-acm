@@ -167,11 +167,11 @@ echo ">>NET_INFO"
 	if !strings.Contains(out, "VINFRA_OK=1") || !strings.Contains(out, "GUESTS_DEFINED=1") {
 		return fmt.Errorf("vInfra incomplete: %s", truncate(out, 800))
 	}
-	e.setStage(j, StageVInfra, StageOK,
-		fmt.Sprintf("libvirt pool %q + net %q + %d guest domain(s) on qemu:///system (shut off until ISO boot) — check: virsh --connect qemu:///system list --all", pool, netName, len(guests)),
-		out)
+	e.log(j, StageVInfra, "check guests: virsh --connect qemu:///system list --all")
 	e.log(j, StageVInfra, "host stdout:\n%s", trimHostOut(out))
-	_ = e.SaveJob(j)
+	e.setStage(j, StageVInfra, StageOK,
+		fmt.Sprintf("%d guest domain(s) defined on qemu:///system (shut off until ISO boot)", len(guests)),
+		out)
 	return nil
 }
 
@@ -315,7 +315,6 @@ RC=$?
 set -e
 if [ "$RC" -ne 0 ]; then
   echo "AGENT_CREATE_FAILED=$RC"
-  # Guests already exist from vInfra — soft-fail so Clean/re-Deploy can retry ISO.
   virsh --connect qemu:///system list --all || true
   echo OCP_SOFT_FAIL=1
   exit 0
@@ -341,6 +340,7 @@ echo OCP_PREP_OK=1
 	if err != nil {
 		return fmt.Errorf("OCP: %v (%s)", err, truncate(out, 800))
 	}
+	e.log(j, StageOCP, "check: virsh --connect qemu:///system list --all")
 	e.log(j, StageOCP, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
 	if strings.Contains(out, "OCP_SOFT_FAIL=1") {
@@ -352,19 +352,21 @@ echo OCP_PREP_OK=1
 		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret") || strings.Contains(low, "unauthorized"):
 			reason = "pull-secret invalid or unauthorized for release image"
 		}
-		e.setStage(j, StageOCP, StageOK,
-			fmt.Sprintf("Guest domains exist on qemu:///system (shut off); agent ISO not created — %s. Hub %s left shut off. Fix EE/pull-secret then Clean + Deploy. Check: virsh --connect qemu:///system list --all", reason, hubName),
-			out)
-		return nil
+		return blocked(fmt.Sprintf(
+			"OCP-MGMT blocked — guest domains exist (shut off) but agent ISO was not created (%s). Hub %s not started. Fix EE/pull-secret, then Clean + Deploy. Check: virsh --connect qemu:///system list --all",
+			reason, hubName))
 	}
 	if !strings.Contains(out, "OCP_PREP_OK=1") {
 		return fmt.Errorf("OCP incomplete: %s", truncate(out, 800))
 	}
-	msg := fmt.Sprintf("Agent ISO path ready; hub domain %s", hubName)
-	if strings.Contains(out, "HUB_BOOTED=1") {
-		msg = fmt.Sprintf("Agent ISO attached — started hub domain %s", hubName)
+	if !strings.Contains(out, "HUB_BOOTED=1") {
+		return blocked(fmt.Sprintf(
+			"Agent ISO may exist but hub domain %s was not started — attach ISO manually or re-Deploy. Guests: virsh --connect qemu:///system list --all",
+			hubName))
 	}
-	e.setStage(j, StageOCP, StageOK, msg, out)
+	e.setStage(j, StageOCP, StageOK,
+		fmt.Sprintf("MGMT VM started — agent ISO attached to %s (SNO install continues on host; kubeconfig not ready yet)", hubName),
+		out)
 	return nil
 }
 
@@ -386,10 +388,14 @@ func (e *Engine) stageACM(j *Job) error {
 	}
 	kc := m.Spec.Gaps.HubKubeconfig
 	if isGapPlaceholder(kc) || kc == "" {
-		return blocked("ACM install needs a live hub kubeconfig (after OCP-MGMT is up). Set hub kubeconfig path in Wizard, then re-Deploy.")
+		return blocked("ACM blocked — need a live hub kubeconfig after OCP-MGMT finishes. Set path in Wizard, then Clean + Deploy.")
+	}
+	if !hubKubeconfigReady(kc) {
+		return blocked(fmt.Sprintf(
+			"ACM blocked — hub kubeconfig not ready yet at %s (SNO install still running, or path missing). Wait for kubeconfig, then Clean + Deploy.",
+			kc))
 	}
 
-	// Check if kubeconfig is reachable from API pod OR stage manifests to host for later.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
 	e.log(j, StageACM, "stage ACM channels → %s/acm (acm=%s mce=%s) kubeconfig=%s",
 		remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel, kc)
@@ -398,11 +404,6 @@ func (e *Engine) stageACM(j *Job) error {
 ROOT=%q
 mkdir -p "$ROOT/acm"
 echo "ACM channel=%s MCE=%s" > "$ROOT/acm/channels.txt"
-if command -v oc >/dev/null 2>&1; then
-  echo HAS_OC=1
-else
-  echo HAS_OC=0
-fi
 echo ACM_STAGED=1
 `, remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel)
 
@@ -410,8 +411,10 @@ echo ACM_STAGED=1
 	if err != nil {
 		return fmt.Errorf("ACM stage: %v (%s)", err, truncate(out, 400))
 	}
-	e.setStage(j, StageACM, StageOK, "ACM channel manifests staged on host — apply after hub kubeconfig is live", out)
-	return nil
+	// Operator install against the live API is not automated yet — stop honestly.
+	return blocked(fmt.Sprintf(
+		"ACM blocked — kubeconfig present at %s and channels staged under %s/acm, but operator install is not automated yet. Apply MCE/ACM manually or wait for the next assembly step.",
+		kc, remoteRoot))
 }
 
 func (e *Engine) stageSpokes(j *Job) error {
@@ -433,13 +436,20 @@ func (e *Engine) stageSpokes(j *Job) error {
 			fmt.Fprintf(&namesShell, " %s", shellQuote(g.Name))
 		}
 	}
+	missingISO := 0
+	for _, c := range m.Spec.Clusters {
+		e.log(j, StageSpokes, "cluster %s discoveryISO=%s", c.Name, orDash(c.DiscoveryISO))
+		if isGapPlaceholder(c.DiscoveryISO) {
+			missingISO++
+		}
+	}
 	e.log(j, StageSpokes, "expect spoke domains: %s", strings.Join(spokeNames, ", "))
 	_ = e.SaveJob(j)
 
 	script := fmt.Sprintf(`set -eu
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 echo "SPOKE_CHECK<<"
-virsh list --all || true
+virsh --connect qemu:///system list --all || true
 echo ">>SPOKE_CHECK"
 MISSING=0
 for n in%s; do
@@ -451,20 +461,49 @@ for n in%s; do
   fi
 done
 echo "SPOKE_MISSING=$MISSING"
-echo SPOKES_STAGED=1
 `, namesShell.String())
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
 		return fmt.Errorf("spokes: %v (%s)", err, truncate(out, 400))
 	}
+	e.log(j, StageSpokes, "host stdout:\n%s", trimHostOut(out))
 	if strings.Contains(out, "SPOKE_MISSING=") && !strings.Contains(out, "SPOKE_MISSING=0") {
 		return fmt.Errorf("spoke domains missing after vInfra — check virt-install / pool perms: %s", truncate(out, 600))
 	}
-	e.setStage(j, StageSpokes, StageOK,
-		fmt.Sprintf("%d spoke domain(s) defined (shut off). Discovery ISO attach is next after ACM InfraEnv — not auto-booted yet.", len(spokeNames)),
-		out)
-	return nil
+	if missingISO > 0 {
+		return blocked(fmt.Sprintf(
+			"OCP-DEPLOY blocked — %d spoke domain(s) defined (shut off) but %d cluster(s) still need discovery ISO paths (ACM InfraEnv). Not auto-booted. Check: virsh --connect qemu:///system list --all",
+			len(spokeNames), missingISO))
+	}
+	return blocked(fmt.Sprintf(
+		"OCP-DEPLOY blocked — %d spoke domain(s) defined with discovery ISO paths set, but attach/boot + ACM spoke bring-up is not automated yet.",
+		len(spokeNames)))
+}
+
+func hubKubeconfigReady(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || st.Size() < 32 {
+		return false
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	s := string(b)
+	return strings.Contains(s, "clusters:") || strings.Contains(s, "apiVersion:")
+}
+
+func orDash(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "(missing)"
+	}
+	return s
 }
 
 func safeUser(j *Job) string {

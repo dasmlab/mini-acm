@@ -10,7 +10,7 @@
           </div>
         </div>
         <q-space />
-        <q-badge :color="jobBadgeColor" class="text-capitalize">{{ job?.status || 'starting' }}</q-badge>
+        <q-badge :color="jobBadgeColor" class="text-capitalize">{{ jobStatusLabel }}</q-badge>
       </q-card-section>
 
       <q-separator />
@@ -40,7 +40,7 @@
           class="q-mt-md"
           :class="bannerClass"
         >
-          {{ job.message }}
+          {{ bannerText }}
         </q-banner>
 
         <div class="console-wrap q-mt-md">
@@ -91,23 +91,44 @@ let timer = null
 
 const placeholderStages = [
   { id: 'ee', label: 'Execution environment', detail: 'Curated mock-me-ee via podman', status: 'pending', icon: 'precision_manufacturing' },
-  { id: 'generate', label: 'Generate objects', detail: 'ISO/config artifacts', status: 'pending', icon: 'description' },
-  { id: 'vinfra', label: 'Build vInfra', detail: 'libvirt net + pool + vHosts', status: 'pending', icon: 'lan' },
-  { id: 'ocp', label: 'Deploy OCP + appliances', detail: 'OCP-MGMT + VyOS', status: 'pending', icon: 'memory' },
-  { id: 'acm', label: 'Install ACM', detail: 'Operators on mgmt', status: 'pending', icon: 'extension' },
-  { id: 'spokes', label: 'Deployment clusters', detail: 'ACM spokes + ISO', status: 'pending', icon: 'developer_board' },
+  { id: 'generate', label: 'Generate objects', detail: 'Stage YAML / secrets', status: 'pending', icon: 'description' },
+  { id: 'vinfra', label: 'Define lab VMs', detail: 'libvirt pool, net, guests', status: 'pending', icon: 'lan' },
+  { id: 'ocp', label: 'OCP-MGMT (SNO)', detail: 'Agent ISO → start hub VM', status: 'pending', icon: 'memory' },
+  { id: 'acm', label: 'Install ACM', detail: 'Operators on live MGMT', status: 'pending', icon: 'extension' },
+  { id: 'spokes', label: 'OCP-DEPLOY clusters', detail: 'Discovery ISO + spoke bring-up', status: 'pending', icon: 'developer_board' },
 ]
 
-const jobBadgeColor = computed(() => ({
-  running: 'orange-8',
-  succeeded: 'positive',
-  failed: 'negative',
-}[job.value?.status] || 'grey-6'))
+const hasBlockedStage = computed(() =>
+  (job.value?.stages || []).some((s) => s.status === 'blocked'),
+)
+
+const jobStatusLabel = computed(() => {
+  if (!job.value?.status) return 'starting'
+  if (job.value.status === 'failed' && hasBlockedStage.value) return 'blocked'
+  return job.value.status
+})
+
+const jobBadgeColor = computed(() => {
+  if (job.value?.status === 'running') return 'orange-8'
+  if (job.value?.status === 'succeeded') return 'positive'
+  if (job.value?.status === 'failed' && hasBlockedStage.value) return 'orange-9'
+  if (job.value?.status === 'failed') return 'negative'
+  return 'grey-6'
+})
 
 const bannerClass = computed(() => {
   if (job.value?.status === 'succeeded') return 'bg-green-1 text-green-10'
-  if (job.value?.status === 'failed') return 'bg-orange-1 text-orange-10'
+  if (job.value?.status === 'failed' && hasBlockedStage.value) return 'bg-orange-1 text-orange-10'
+  if (job.value?.status === 'failed') return 'bg-red-1 text-red-10'
   return 'bg-blue-1 text-blue-10'
+})
+
+const bannerText = computed(() => {
+  const msg = job.value?.message || ''
+  if (job.value?.status === 'failed' && hasBlockedStage.value) {
+    return `${msg} — Guests may exist on qemu:///system (often shut off). Use Clean, fix gaps (pull-secret / EE / kubeconfig / discovery ISO), then Deploy again.`
+  }
+  return msg
 })
 
 const consoleText = computed(() => {
@@ -273,8 +294,8 @@ onBeforeUnmount(stopPoll)
 .console {
   margin: 0;
   padding: 0.55rem 0.7rem 0.7rem;
-  min-height: 140px;
-  max-height: 220px;
+  min-height: 180px;
+  max-height: 320px;
   overflow: auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.72rem;
@@ -297,6 +318,6 @@ onBeforeUnmount(stopPoll)
   .station-icon-wrap { grid-row: 1 / span 2; }
   .station-label { min-height: 0; margin-top: 0; }
   .station-detail { min-height: 0; -webkit-line-clamp: 4; }
-  .console { max-height: 180px; }
+  .console { max-height: 220px; }
 }
 </style>
