@@ -24,7 +24,7 @@ func (e *Engine) stageGenerate(j *Job) error {
 	}
 	m, _ = e.mockups.Get(j.MockUpID)
 
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	remoteRoot := remoteWorkRoot(m.Metadata.Name)
 	e.log(j, StageGenerate, "remote work root %s", remoteRoot)
 	_ = e.SaveJob(j)
 
@@ -100,8 +100,8 @@ func (e *Engine) stageVInfra(j *Job) error {
 		netName = "ocp-lab"
 	}
 	pool := m.Spec.InfraHost.StoragePool
-	if pool == "" {
-		pool = "default"
+	if pool == "" || pool == "default" {
+		pool = HostPoolName
 	}
 	cidr := m.Spec.Network.MachineCIDR
 	if cidr == "" {
@@ -112,32 +112,22 @@ func (e *Engine) stageVInfra(j *Job) error {
 		gw = "10.77.30.1"
 	}
 	guests := buildGuests(m)
-	e.log(j, StageVInfra, "libvirt pool=%q net=%q cidr=%s — materialize %d guest(s)", pool, netName, cidr, len(guests))
+	e.log(j, StageVInfra, "host data root %s — libvirt pool=%q net=%q cidr=%s — materialize %d guest(s)",
+		HostDataRoot, pool, netName, cidr, len(guests))
 	for _, g := range guests {
 		e.log(j, StageVInfra, "plan guest %s role=%s cpu=%d memMiB=%d diskGiB=%d mac=%s",
 			g.Name, g.Role, g.CPU, g.MemoryMiB, g.DiskGiB, g.MAC)
 	}
 	_ = e.SaveJob(j)
 
-	script := fmt.Sprintf(`set -eu
+	script := ensureHostLayoutScript(pool) + fmt.Sprintf(`
 echo VINFRA_START
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 systemctl is-active libvirtd 2>/dev/null || sudo -n systemctl start libvirtd
 systemctl is-active libvirtd
 command -v virt-install >/dev/null || { echo "virt-install missing — Fix this install-libvirt"; exit 1; }
-POOL=%q
 NET=%q
 GW=%q
-if ! virsh pool-info "$POOL" >/dev/null 2>&1; then
-  mkdir -p "$HOME/libvirt-images"
-  virsh pool-define-as "$POOL" dir --target "$HOME/libvirt-images" || true
-  virsh pool-build "$POOL" || true
-  virsh pool-start "$POOL" || true
-  virsh pool-autostart "$POOL" || true
-fi
-echo "POOL_INFO<<"
-virsh pool-info "$POOL" || true
-echo ">>POOL_INFO"
 if ! virsh net-info "$NET" >/dev/null 2>&1; then
   cat > /tmp/mock-me-net.xml <<EOF
 <network>
@@ -158,7 +148,7 @@ fi
 echo "NET_INFO<<"
 virsh net-info "$NET" || true
 echo ">>NET_INFO"
-`, pool, netName, gw) + ensureGuestsScript(m, guests) + "\necho VINFRA_OK=1\n"
+`, netName, gw) + ensureGuestsScript(m, guests) + "\necho VINFRA_OK=1\n"
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
@@ -184,7 +174,7 @@ func (e *Engine) stageOCP(j *Job) error {
 		return blocked("OCP-MGMT needs real pull-secret and SSH public key paths before agent ISO create (placeholders still set)")
 	}
 
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	remoteRoot := remoteWorkRoot(m.Metadata.Name)
 	img := EEImage()
 	hubName := m.Spec.Hub.Hostname
 	if hubName == "" {
@@ -330,15 +320,14 @@ if [ "$RC" -ne 0 ]; then
 fi
 ISO=$(ls -1 "$ROOT/hub"/agent*.iso 2>/dev/null | head -1 || true)
 echo "ISO=$ISO"
-POOL=$(virsh pool-list --name 2>/dev/null | awk 'NF{print; exit}')
-[ -n "$POOL" ] || POOL=default
+POOL=%q
 POOL_PATH=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
-[ -n "$POOL_PATH" ] || POOL_PATH="$HOME/libvirt-images"
+[ -n "$POOL_PATH" ] || POOL_PATH=%q
 mkdir -p "$POOL_PATH"
-chmod o+x "$HOME" 2>/dev/null || true
+chmod o+x /vm-disks "$(dirname "$POOL_PATH")" "$POOL_PATH" 2>/dev/null || true
 chmod 755 "$POOL_PATH" 2>/dev/null || true
 if [ -n "$ISO" ] && virsh dominfo "$HUB" >/dev/null 2>&1; then
-  # Copy out of the podman-written hub dir (often container_file_t / MCS) into the pool.
+  # Copy out of the podman-written hub dir into the libvirt pool on /vm-disks.
   ISO_POOL="$POOL_PATH/${HUB}-agent.iso"
   cp -f "$ISO" "$ISO_POOL"
   chmod a+r "$ISO_POOL"
@@ -362,7 +351,7 @@ echo "VIRSH_SYSTEM<<"
 virsh --connect qemu:///system list --all || true
 echo ">>VIRSH_SYSTEM"
 echo OCP_PREP_OK=1
-`, remoteRoot, img, hubName)
+`, remoteRoot, img, hubName, HostPoolName, HostImagesDir)
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
@@ -396,7 +385,7 @@ echo OCP_PREP_OK=1
 	if !strings.Contains(out, "HUB_BOOTED=1") {
 		extra := ""
 		if strings.Contains(out, "HUB_START_FAILED=1") {
-			extra = " (virsh start failed — often qemu cannot read disks under $HOME: chmod o+x $HOME + chown qemu disks)"
+			extra = " (virsh start failed — check qemu can read pool disks/ISO under /vm-disks/mock-me)"
 		}
 		return blocked(fmt.Sprintf(
 			"Agent ISO may exist but hub domain %s was not started%s. Guests: virsh --connect qemu:///system list --all",
@@ -441,7 +430,7 @@ func (e *Engine) stageACM(j *Job) error {
 			kc))
 	}
 
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	remoteRoot := remoteWorkRoot(m.Metadata.Name)
 	e.log(j, StageACM, "stage ACM channels → %s/acm (acm=%s mce=%s) kubeconfig=%s",
 		remoteRoot, m.Spec.ACM.ACMChannel, m.Spec.ACM.MCEChannel, kc)
 	_ = e.SaveJob(j)

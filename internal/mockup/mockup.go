@@ -469,7 +469,7 @@ func defaultInfraHost(rackName string) InfraHostNode {
 			// VMnet12 host-only — reserved for future "move up a class"; not the lab LAN.
 			{Name: "ens224", Model: "e1000e", Mode: "host-only", Network: "VMnet12", Role: "host-only"},
 		},
-		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "default",
+		LibvirtURI: "qemu:///system", NetworkName: "ocp-lab", StoragePool: "mock-me",
 		Podman:       true,
 		SSHHost:      "192.168.1.142",
 		SSHUser:      "dasm",
@@ -672,8 +672,8 @@ func normalize(m *MockUp) {
 	if ih.NetworkName == "" {
 		ih.NetworkName = "ocp-lab"
 	}
-	if ih.StoragePool == "" {
-		ih.StoragePool = "default"
+	if ih.StoragePool == "" || ih.StoragePool == "default" {
+		ih.StoragePool = "mock-me"
 	}
 	if ih.SSHHost == "" {
 		ih.SSHHost = "192.168.1.142"

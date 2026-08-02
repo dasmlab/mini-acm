@@ -114,8 +114,8 @@ func buildGuests(m *mockup.MockUp) []guestSpec {
 // ensureGuestsScript creates shut-off libvirt domains + qcow2 disks for the MockUp.
 func ensureGuestsScript(m *mockup.MockUp, guests []guestSpec) string {
 	pool := m.Spec.InfraHost.StoragePool
-	if pool == "" {
-		pool = "default"
+	if pool == "" || pool == "default" {
+		pool = HostPoolName
 	}
 	net := m.Spec.InfraHost.NetworkName
 	if net == "" {
@@ -128,19 +128,17 @@ func ensureGuestsScript(m *mockup.MockUp, guests []guestSpec) string {
 	b.WriteString("command -v virt-install >/dev/null\n")
 	b.WriteString("command -v virsh >/dev/null\n")
 	fmt.Fprintf(&b, "POOL=%q\nNET=%q\n", pool, net)
-	b.WriteString(`POOL_PATH=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
-[ -n "$POOL_PATH" ] || POOL_PATH="$HOME/libvirt-images"
+	fmt.Fprintf(&b, "POOL_PATH=%q\n", HostImagesDir)
+	b.WriteString(`CUR=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
+[ -n "$CUR" ] && POOL_PATH="$CUR"
 mkdir -p "$POOL_PATH"
-# qemu:///system runs as qemu (uid 107) — must traverse $HOME and read/write disks.
-chmod o+x "$HOME" 2>/dev/null || true
 chmod 755 "$POOL_PATH" 2>/dev/null || true
+chmod o+x /vm-disks "$(dirname "$POOL_PATH")" "$POOL_PATH" 2>/dev/null || true
 if command -v setfacl >/dev/null 2>&1; then
-  setfacl -m u:qemu:--x "$HOME" 2>/dev/null || true
   setfacl -m u:qemu:rwx "$POOL_PATH" 2>/dev/null || true
 fi
-if command -v semanage >/dev/null 2>&1; then
-  semanage fcontext -a -t virt_image_t "$POOL_PATH(/.*)?" 2>/dev/null || true
-  restorecon -Rv "$POOL_PATH" 2>/dev/null || true
+if command -v chcon >/dev/null 2>&1; then
+  chcon -Rt virt_image_t "$POOL_PATH" 2>/dev/null || true
 fi
 echo "POOL_PATH=$POOL_PATH"
 `)
@@ -197,16 +195,16 @@ echo ">>POOL_VOLS"
 }
 
 // destroyGuestsScript undefines MockUp domains and removes their pool volumes + remote work dir.
-func destroyGuestsScript(m *mockup.MockUp, guests []guestSpec, remoteWorkRoot string) string {
+func destroyGuestsScript(m *mockup.MockUp, guests []guestSpec, remoteWork string) string {
 	pool := m.Spec.InfraHost.StoragePool
-	if pool == "" {
-		pool = "default"
+	if pool == "" || pool == "default" {
+		pool = HostPoolName
 	}
 	var b strings.Builder
 	b.WriteString("set -eu\n")
 	b.WriteString("export LIBVIRT_DEFAULT_URI=\"${LIBVIRT_DEFAULT_URI:-qemu:///system}\"\n")
 	fmt.Fprintf(&b, "POOL=%q\n", pool)
-	fmt.Fprintf(&b, "WORK=%q\n", remoteWorkRoot)
+	fmt.Fprintf(&b, "WORK=%q\n", remoteWork)
 	b.WriteString(`echo "TEARDOWN_START"
 `)
 	for _, g := range guests {

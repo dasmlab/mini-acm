@@ -307,11 +307,7 @@ func (e *Engine) TeardownHost(m *mockup.MockUp, inventoryID string) (string, err
 		return "", nil
 	}
 	guests := buildGuests(m)
-	user := "dasm"
-	if h, err := e.inv.Get(inventoryID); err == nil && h != nil && h.SSHUser != "" {
-		user = h.SSHUser
-	}
-	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", user, m.Metadata.Name)
+	remoteRoot := remoteWorkRoot(m.Metadata.Name)
 	script := destroyGuestsScript(m, guests, remoteRoot)
 	out, _, err := e.inv.RunScript(inventoryID, script)
 	if err != nil {

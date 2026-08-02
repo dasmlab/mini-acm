@@ -42,8 +42,8 @@ func TestDestroyGuestsScript(t *testing.T) {
 		},
 	}
 	g := buildGuests(m)
-	script := destroyGuestsScript(m, g, "/home/dasm/mock-me-work/lab-rack-1")
-	for _, want := range []string{"undefine", "hub-sno", "TEARDOWN_OK=1", "mock-me-work/lab-rack-1"} {
+	script := destroyGuestsScript(m, g, "/vm-disks/mock-me/work/lab-rack-1")
+	for _, want := range []string{"undefine", "hub-sno", "TEARDOWN_OK=1", "/vm-disks/mock-me/work/lab-rack-1"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("destroy script missing %q", want)
 		}

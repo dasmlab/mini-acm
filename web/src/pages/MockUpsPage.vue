@@ -399,7 +399,7 @@ async function doClean(m) {
 function doDelete(m) {
   Dialog.create({
     title: 'Delete MockUp?',
-    message: `Removes ${m.metadata.name} locally and tears down matching libvirt guests + ~/mock-me-work/${m.metadata.name} on the Inventory host (best-effort).`,
+    message: `Removes ${m.metadata.name} locally and tears down matching libvirt guests + /vm-disks/mock-me/work/${m.metadata.name} on the Inventory host (best-effort).`,
     cancel: true,
     persistent: true,
   }).onOk(async () => {
