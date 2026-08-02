@@ -168,7 +168,7 @@ echo ">>NET_INFO"
 		return fmt.Errorf("vInfra incomplete: %s", truncate(out, 800))
 	}
 	e.setStage(j, StageVInfra, StageOK,
-		fmt.Sprintf("libvirt pool %q + net %q + %d guest domain(s) defined (shut off until ISO boot)", pool, netName, len(guests)),
+		fmt.Sprintf("libvirt pool %q + net %q + %d guest domain(s) on qemu:///system (shut off until ISO boot) — check: virsh --connect qemu:///system list --all", pool, netName, len(guests)),
 		out)
 	e.log(j, StageVInfra, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
@@ -301,6 +301,7 @@ hosts:
 ROOT=%q
 EE_IMAGE=%q
 HUB=%q
+export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
 mkdir -p "$ROOT/hub"
 # Keep copies install-config needs (installer consumes/moves install-config.yaml)
 cp -f "$ROOT/hub/install-config.yaml" "$ROOT/hub/install-config.yaml.bak" 2>/dev/null || true
@@ -314,8 +315,8 @@ RC=$?
 set -e
 if [ "$RC" -ne 0 ]; then
   echo "AGENT_CREATE_FAILED=$RC"
-  # Guests already exist from vInfra — do not hard-fail the whole line for a stub pull-secret.
-  virsh list --all || true
+  # Guests already exist from vInfra — soft-fail so Clean/re-Deploy can retry ISO.
+  virsh --connect qemu:///system list --all || true
   echo OCP_SOFT_FAIL=1
   exit 0
 fi
@@ -330,7 +331,9 @@ if [ -n "$ISO" ] && virsh dominfo "$HUB" >/dev/null 2>&1; then
   virsh start "$HUB" || true
   echo "HUB_BOOTED=1"
 fi
-virsh list --all || true
+echo "VIRSH_SYSTEM<<"
+virsh --connect qemu:///system list --all || true
+echo ">>VIRSH_SYSTEM"
 echo OCP_PREP_OK=1
 `, remoteRoot, img, hubName)
 
@@ -341,8 +344,16 @@ echo OCP_PREP_OK=1
 	e.log(j, StageOCP, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
 	if strings.Contains(out, "OCP_SOFT_FAIL=1") {
+		reason := "openshift-install agent create image failed"
+		low := strings.ToLower(out)
+		switch {
+		case strings.Contains(low, "nmstatectl"):
+			reason = "EE image missing nmstatectl (rebuild/push mock-me-ee with nmstate)"
+		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret") || strings.Contains(low, "unauthorized"):
+			reason = "pull-secret invalid or unauthorized for release image"
+		}
 		e.setStage(j, StageOCP, StageOK,
-			fmt.Sprintf("Guest domains exist; agent ISO not created yet (openshift-install failed — often stub/invalid pull-secret). Hub %s left shut off. Fix pull-secret and re-Deploy/Clean.", hubName),
+			fmt.Sprintf("Guest domains exist on qemu:///system (shut off); agent ISO not created — %s. Hub %s left shut off. Fix EE/pull-secret then Clean + Deploy. Check: virsh --connect qemu:///system list --all", reason, hubName),
 			out)
 		return nil
 	}

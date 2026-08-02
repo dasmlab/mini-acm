@@ -17,7 +17,7 @@ ARG OCP_CLIENT_VERSION=4.18
 ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-${OCP_CLIENT_VERSION}/openshift-client-linux.tar.gz
 ARG INSTALLER_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-${OCP_CLIENT_VERSION}/openshift-install-linux.tar.gz
 
-RUN microdnf install -y tar gzip ca-certificates && \
+RUN microdnf install -y tar gzip ca-certificates nmstate && \
     curl -fsSL "${OC_CLI_URL}" -o /tmp/oc.tar.gz && \
     tar -C /usr/local/bin -xzf /tmp/oc.tar.gz oc kubectl && \
     curl -fsSL "${INSTALLER_URL}" -o /tmp/install.tar.gz && \
@@ -25,6 +25,7 @@ RUN microdnf install -y tar gzip ca-certificates && \
     chmod +x /usr/local/bin/oc /usr/local/bin/kubectl /usr/local/bin/openshift-install && \
     rm -f /tmp/oc.tar.gz /tmp/install.tar.gz && \
     microdnf clean all && \
+    command -v nmstatectl && \
     oc version --client && \
     openshift-install version
 
