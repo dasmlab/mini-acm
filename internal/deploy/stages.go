@@ -123,8 +123,13 @@ func (e *Engine) stageVInfra(j *Job) error {
 	script := ensureHostLayoutScript(pool) + fmt.Sprintf(`
 echo VINFRA_START
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
-systemctl is-active libvirtd 2>/dev/null || sudo -n systemctl start libvirtd
-systemctl is-active libvirtd
+# RHEL 10 uses modular virtqemud — libvirtd.service may be inactive; do not require sudo.
+if ! virsh list >/dev/null 2>&1; then
+  systemctl --user start virtqemud.socket 2>/dev/null || true
+  sudo -n systemctl start virtqemud.socket 2>/dev/null || true
+  sudo -n systemctl start libvirtd 2>/dev/null || true
+fi
+virsh list >/dev/null
 command -v virt-install >/dev/null || { echo "virt-install missing — Fix this install-libvirt"; exit 1; }
 NET=%q
 GW=%q

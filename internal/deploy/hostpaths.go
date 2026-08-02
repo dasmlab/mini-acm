@@ -42,7 +42,7 @@ if [ ! -d /vm-disks ]; then
   ROOT="$HOME/mock-me"
   IMAGES="$ROOT/images"
 fi
-# Ensure dasm (or deploy SSH user) can write; qemu can read.
+# Ensure deploy SSH user can write; qemu can read. Never hard-fail on sudo.
 if [ ! -w /vm-disks ] 2>/dev/null; then
   sudo -n mkdir -p "$IMAGES" "$ROOT/work" 2>/dev/null || true
   sudo -n chown -R "$(id -u):$(id -g)" /vm-disks 2>/dev/null || true
@@ -58,10 +58,8 @@ chmod o+x /vm-disks "$ROOT" "$IMAGES" 2>/dev/null || true
 if command -v setfacl >/dev/null 2>&1; then
   setfacl -m u:qemu:rwx /vm-disks "$ROOT" "$IMAGES" 2>/dev/null || true
 fi
-if command -v semanage >/dev/null 2>&1; then
-  semanage fcontext -a -t virt_image_t "$IMAGES(/.*)?" 2>/dev/null || true
-  restorecon -Rv "$IMAGES" 2>/dev/null || true
-elif command -v chcon >/dev/null 2>&1; then
+# Prefer chcon — restorecon without a durable fcontext rule can flip virt_image_t → default_t.
+if command -v chcon >/dev/null 2>&1; then
   chcon -Rt virt_image_t "$IMAGES" 2>/dev/null || true
 fi
 if ! virsh pool-info "$POOL" >/dev/null 2>&1; then
@@ -70,7 +68,6 @@ if ! virsh pool-info "$POOL" >/dev/null 2>&1; then
   virsh pool-start "$POOL" || true
   virsh pool-autostart "$POOL" || true
 else
-  # Re-point an existing mock-me pool if it still targets $HOME.
   CUR=$(virsh pool-dumpxml "$POOL" 2>/dev/null | sed -n 's/.*<path>\([^<]*\)<\/path>.*/\1/p' | head -1)
   if [ -n "$CUR" ] && [ "$CUR" != "$IMAGES" ]; then
     echo "POOL_REPOINT $POOL $CUR -> $IMAGES"
