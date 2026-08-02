@@ -61,7 +61,8 @@ type ProbeResult struct {
 	AuthOK         bool              `json:"authOK"`
 	LibvirtReady   bool              `json:"libvirtReady"`
 	PodmanReady    bool              `json:"podmanReady"`
-	InstallerReady bool              `json:"installerReady"` // openshift-install on PATH
+	InstallerReady bool              `json:"installerReady"` // curated EE has openshift-install (+ legacy host PATH)
+	EEReady        bool              `json:"eeReady"`        // mock-me-ee image present with tools
 	Orchestration  bool              `json:"orchestration"`  // green: ready to orchestrate a MockUp plan
 	Message        string            `json:"message"`
 	Facts          map[string]string `json:"facts,omitempty"`

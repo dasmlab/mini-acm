@@ -1,0 +1,33 @@
+# ==============================================================================
+# mock-me-ee — LAB / TEST / DEV ONLY
+# Curated execution environment for Deploy on MACHINE-HOST (via podman).
+# Ships openshift-install + oc so the inventory host only needs podman + libvirt.
+# ==============================================================================
+
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+LABEL org.opencontainers.image.title="mock-me-ee" \
+      org.opencontainers.image.description="Curated EE: openshift-install + oc for mock-me Deploy — LAB/TEST/DEV ONLY" \
+      org.opencontainers.image.source="https://github.com/dasmlab/mock-me" \
+      io.dasmlab.warning="LAB_TEST_DEV_ONLY" \
+      io.dasmlab.component="execution-environment"
+
+# Match hub.example / default MockUp hub version family.
+ARG OCP_CLIENT_VERSION=4.18
+ARG OC_CLI_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-${OCP_CLIENT_VERSION}/openshift-client-linux.tar.gz
+ARG INSTALLER_URL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable-${OCP_CLIENT_VERSION}/openshift-install-linux.tar.gz
+
+RUN microdnf install -y tar gzip ca-certificates && \
+    curl -fsSL "${OC_CLI_URL}" -o /tmp/oc.tar.gz && \
+    tar -C /usr/local/bin -xzf /tmp/oc.tar.gz oc kubectl && \
+    curl -fsSL "${INSTALLER_URL}" -o /tmp/install.tar.gz && \
+    tar -C /usr/local/bin -xzf /tmp/install.tar.gz openshift-install && \
+    chmod +x /usr/local/bin/oc /usr/local/bin/kubectl /usr/local/bin/openshift-install && \
+    rm -f /tmp/oc.tar.gz /tmp/install.tar.gz && \
+    microdnf clean all && \
+    oc version --client && \
+    openshift-install version
+
+WORKDIR /work
+ENTRYPOINT ["/usr/local/bin/openshift-install"]
+CMD ["version"]

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dasmlab/mock-me/internal/eeimage"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -16,6 +17,7 @@ const (
 	FixInstallLibvirt = "install-libvirt"
 	FixStartLibvirtd  = "start-libvirtd"
 	FixInstallPodman  = "install-podman"
+	FixEnsureMockMeEE = "ensure-mock-me-ee"
 )
 
 // FixReq remediates probe issues on the target over SSH.
@@ -172,11 +174,54 @@ if ! dnf install -y podman; then
 fi
 command -v podman
 podman --version
-# EE / runner agent image pull is deferred (MOCK_ME_AGENT_IMAGE later)
 `, "install-podman")
+	case FixEnsureMockMeEE:
+		// No sudo required — pull curated EE as the SSH user (rootless podman preferred).
+		return runUserScript(client, ensureMockMeEEScript(), "ensure-mock-me-ee")
 	default:
 		return nil, fmt.Errorf("unknown fix action %q", action)
 	}
+}
+
+func ensureMockMeEEScript() string {
+	img := eeimage.Image()
+	q := "'" + strings.ReplaceAll(img, "'", `'"'"'`) + "'"
+	return fmt.Sprintf(`
+set -e
+EE_IMAGE=%s
+command -v podman >/dev/null
+echo "Ensuring curated EE $EE_IMAGE"
+podman pull "$EE_IMAGE"
+podman image exists "$EE_IMAGE"
+podman run --rm "$EE_IMAGE" version | head -3
+podman run --rm --entrypoint /usr/local/bin/oc "$EE_IMAGE" version --client | head -2
+echo "MOCK_ME_EE_OK=1"
+`, q)
+}
+
+// runUserScript runs a script as the SSH user (no sudo) — used for podman pull of EE.
+func runUserScript(client *ssh.Client, script, label string) ([]string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	var buf bytes.Buffer
+	session.Stdout = &buf
+	session.Stderr = &buf
+	session.Stdin = strings.NewReader(script)
+	err = session.Run("bash -s")
+	out := strings.TrimSpace(buf.String())
+	lines := []string{fmt.Sprintf("--- %s ---", label)}
+	if out != "" {
+		for _, ln := range strings.Split(out, "\n") {
+			lines = append(lines, ln)
+		}
+	}
+	if err != nil {
+		return lines, fmt.Errorf("%s: %w (%s)", label, err, truncate(out, 400))
+	}
+	return lines, nil
 }
 
 func sudoScript(client *ssh.Client, sudoPassword, script, label string) ([]string, error) {

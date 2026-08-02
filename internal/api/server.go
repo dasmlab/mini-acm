@@ -394,18 +394,19 @@ func (s *Server) deployMockup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Soft preflight from last probe facts (EE stage is authoritative).
+	// Soft preflight: curated EE (openshift-install in container), not host PATH.
 	if s.inventory != nil && host != nil {
-		if v := strings.TrimSpace(host.Facts["openshiftInstall"]); v == "missing" || v == "" {
-			// Re-probe once so Inventory UI and Deploy stay in sync.
+		ee := strings.TrimSpace(host.Facts["mockMeEE"])
+		oi := strings.TrimSpace(host.Facts["openshiftInstall"])
+		needProbe := ee == "" || ee == "missing" || ee == "broken" || oi == "missing" || oi == ""
+		if needProbe {
 			if pr, err := s.inventory.Probe(host.ID); err == nil && pr != nil {
-				host = pr.Host
 				if pr.Host != nil {
 					host = pr.Host
 				}
-				if !pr.InstallerReady {
+				if !pr.EEReady && !pr.InstallerReady {
 					http.Error(w,
-						"openshift-install not on inventory host — Probe shows it missing; install the client on the MACHINE-HOST before Deploy (EE prereq)",
+						"curated mock-me-ee not ready on inventory host — Probe → Fix this (ensure-mock-me-ee) to pull openshift-install+oc in the EE image",
 						http.StatusConflict)
 					return
 				}

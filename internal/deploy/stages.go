@@ -61,40 +61,10 @@ func (e *Engine) stageGenerate(j *Job) error {
 }
 
 func (e *Engine) stageEE(j *Job) error {
-	e.log(j, StageEE, "check podman + openshift-install + quay.io/ansible/creator-ee on %s", j.HostEndpoint)
+	img := EEImage()
+	e.log(j, StageEE, "ensure curated EE %s on %s (host needs podman only)", img, j.HostEndpoint)
 	_ = e.SaveJob(j)
-	script := `set -eu
-echo "EE_CHECK_START"
-if command -v podman >/dev/null 2>&1; then
-  echo "podman=$(podman --version 2>/dev/null | head -1)"
-  echo "HAS_PODMAN=1"
-else
-  echo "HAS_PODMAN=0"
-fi
-if command -v openshift-install >/dev/null 2>&1; then
-  echo "openshift-install=$(openshift-install version 2>&1 | sed -n '1p')"
-  echo "HAS_INSTALLER=1"
-else
-  echo "HAS_INSTALLER=0"
-fi
-if [ "${HAS_PODMAN:-0}" != "1" ]; then
-  echo "EE_FAIL=podman"
-  exit 0
-fi
-if [ "${HAS_INSTALLER:-0}" != "1" ]; then
-  echo "EE_FAIL=openshift-install"
-  exit 0
-fi
-# Lightweight runner image check (pull only if missing — keep lab friendly)
-if ! podman image exists quay.io/ansible/creator-ee:latest 2>/dev/null; then
-  echo "PULLING creator-ee (may take a minute)…"
-  podman pull quay.io/ansible/creator-ee:latest
-fi
-podman image exists quay.io/ansible/creator-ee:latest
-# Smoke: run a no-op container (no pipefail+head — SIGPIPE 141)
-podman run --rm quay.io/ansible/creator-ee:latest ansible --version 2>&1 | sed -n '1,5p' || true
-echo "EE_OK=1"
-`
+	script := "set -eu\necho EE_CHECK_START\n" + eeEnsureScript()
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
 		return fmt.Errorf("execution env: %v (%s)", err, truncate(out, 500))
@@ -102,16 +72,20 @@ echo "EE_OK=1"
 	e.log(j, StageEE, "host stdout:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
 	if strings.Contains(out, "EE_FAIL=podman") {
-		return blocked("podman not on inventory host — required for EE/runner; Probe → Fix this (install-podman), then Clean + Deploy")
+		return blocked("podman not on inventory host — required to run the curated mock-me EE; Probe → Fix this (install-podman), then Clean + Deploy")
 	}
-	if strings.Contains(out, "EE_FAIL=openshift-install") {
-		return blocked("openshift-install not on inventory host — required before OCP-MGMT; install the client on the MACHINE-HOST (Inventory Probe will flag it), then Clean + Deploy. Plan files are not staged until EE passes.")
+	if strings.Contains(out, "EE_FAIL=ee-image") {
+		return blocked(fmt.Sprintf("curated EE image %s not pullable — Probe → Fix this (ensure-mock-me-ee), or set MOCK_ME_EE_IMAGE; then Clean + Deploy", img))
+	}
+	if strings.Contains(out, "EE_FAIL=ee-tools") {
+		return blocked(fmt.Sprintf("EE image %s is present but missing openshift-install/oc — rebuild/push mock-me-ee, then Fix this / re-Deploy", img))
 	}
 	if !strings.Contains(out, "EE_OK=1") {
 		return fmt.Errorf("EE check incomplete: %s", truncate(out, 500))
 	}
-	e.setStage(j, StageEE, StageOK, "Podman + openshift-install + Ansible creator-EE ready on inventory host", out)
-	e.log(j, StageEE, "host stdout:\n%s", trimHostOut(out))
+	e.setStage(j, StageEE, StageOK,
+		fmt.Sprintf("Curated EE ready (%s) — openshift-install + oc in container; host only needed podman", img),
+		out)
 	_ = e.SaveJob(j)
 	return nil
 }
@@ -204,36 +178,34 @@ func (e *Engine) stageOCP(j *Job) error {
 		return blocked("OCP-MGMT needs real pull-secret and SSH public key paths in Wizard gaps before ISO/agent install can run (placeholders still set)")
 	}
 
-	// Verify remote workspace + prepare hub work dir; kick agent create if openshift-install present.
+	// Verify remote workspace; installer comes from curated EE (podman), not host PATH.
 	remoteRoot := fmt.Sprintf("/home/%s/mock-me-work/%s", safeUser(j), m.Metadata.Name)
+	img := EEImage()
 	e.log(j, StageOCP, "gaps pullSecret=%s sshPub=%s", m.Spec.Gaps.PullSecretFile, m.Spec.Gaps.SSHPublicKeyFile)
-	e.log(j, StageOCP, "prep hub workdir %s/hub (expect %s/out/hub.yaml)", remoteRoot, remoteRoot)
+	e.log(j, StageOCP, "prep hub workdir %s/hub via EE %s", remoteRoot, img)
 	_ = e.SaveJob(j)
 	script := fmt.Sprintf(`set -eu
 ROOT=%q
+EE_IMAGE=%s
 mkdir -p "$ROOT/hub"
 test -f "$ROOT/out/hub.yaml"
-if command -v openshift-install >/dev/null 2>&1; then
-  echo "openshift-install=$(openshift-install version 2>&1 | sed -n '1p')"
-  echo "HAS_INSTALLER=1"
-else
-  echo "HAS_INSTALLER=0"
-fi
+podman run --rm "$EE_IMAGE" version 2>&1 | sed -n '1,2p'
+echo "HAS_INSTALLER=1"
 # VyOS / appliance note
 if [ -n "%s" ]; then echo "VYOS_ISO_SET=1"; else echo "VYOS_ISO_SET=0"; fi
 virsh list --all || true
 echo OCP_PREP_OK=1
-`, remoteRoot, m.Spec.Gateway.ISOPath)
+`, remoteRoot, img, m.Spec.Gateway.ISOPath)
 
 	out, _, err := e.inv.RunScript(j.InventoryID, script)
 	if err != nil {
 		return fmt.Errorf("OCP prep: %v (%s)", err, truncate(out, 500))
 	}
-	if strings.Contains(out, "HAS_INSTALLER=0") {
-		return blocked("openshift-install not on inventory host yet — install the client or run hub create from a provisioner with the binary; plan YAML is staged at " + remoteRoot)
+	if !strings.Contains(out, "OCP_PREP_OK=1") {
+		return fmt.Errorf("OCP prep incomplete: %s", truncate(out, 500))
 	}
 	e.setStage(j, StageOCP, StageOK,
-		"OCP prep OK — installer present; hub create can proceed (run agent image next)",
+		fmt.Sprintf("OCP prep OK — hub.yaml staged; installer available via EE %s (agent image next)", img),
 		out)
 	return nil
 }

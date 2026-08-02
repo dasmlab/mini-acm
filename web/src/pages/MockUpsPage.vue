@@ -217,8 +217,11 @@ const eeBlockReason = computed(() => {
   if (h.status === 'unreachable') return `${h.name} is unreachable — Probe Inventory`
   if (h.status === 'partial') return `${h.name} is partial (libvirt) — Fix this on Inventory`
   const oi = String(h.facts?.openshiftInstall || '').trim()
-  if (!oi || oi === 'missing') {
-    return `openshift-install missing on ${h.name} — install the client on that host, then Probe`
+  const ee = String(h.facts?.mockMeEE || '').trim()
+  if (ee === 'ready' || (oi && oi !== 'missing')) {
+    // EE or legacy host installer present
+  } else {
+    return `curated mock-me-ee missing on ${h.name} — Probe → Fix this (ensure-mock-me-ee)`
   }
   const pod = String(h.facts?.podman || '').trim().toLowerCase()
   if (!pod || pod === 'missing' || pod.includes('missing')) {

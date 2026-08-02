@@ -90,7 +90,7 @@ func NewEngine(mockups *mockup.Store, inv *inventory.Store) *Engine {
 
 func defaultStages() []Stage {
 	return []Stage{
-		{ID: StageEE, Label: "Execution environment", Detail: "Prereqs: podman, openshift-install, Ansible EE on inventory host", Icon: "precision_manufacturing", Status: StagePending},
+		{ID: StageEE, Label: "Execution environment", Detail: "Curated mock-me-ee (openshift-install + oc) via podman on inventory host", Icon: "precision_manufacturing", Status: StagePending},
 		{ID: StageGenerate, Label: "Generate objects", Detail: "ISO/config artifacts & derived YAML for bootable guests", Icon: "description", Status: StagePending},
 		{ID: StageVInfra, Label: "Build vInfra", Detail: "libvirt network, storage pool, and vHost definitions", Icon: "lan", Status: StagePending},
 		{ID: StageOCP, Label: "Deploy OCP + appliances", Detail: "OCP-MGMT (SNO) and VyOS / edge appliances", Icon: "memory", Status: StagePending},

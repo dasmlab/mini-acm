@@ -61,6 +61,16 @@ hub-dry: build ## Dry-run hub create from example config
 cluster-dry: build ## Dry-run cluster create from example config
 	./$(BIN_DIR)/$(BINARY_NAME) --dry-run --manual cluster create --config config/cluster.example.yaml
 
+.PHONY: image-ee
+image-ee: ## Build curated mock-me-ee (openshift-install + oc)
+	$(IMAGE_TOOL) build -t ghcr.io/dasmlab/mock-me-ee:4.18 -f deployments/containers/Containerfile.ee .
+
+.PHONY: image-ee-push
+image-ee-push: ## Push mock-me-ee to GHCR
+	$(IMAGE_TOOL) push ghcr.io/dasmlab/mock-me-ee:4.18
+	$(IMAGE_TOOL) tag ghcr.io/dasmlab/mock-me-ee:4.18 ghcr.io/dasmlab/mock-me-ee:latest || true
+	$(IMAGE_TOOL) push ghcr.io/dasmlab/mock-me-ee:latest || true
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dasmlab/mock-me/internal/eeimage"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -122,7 +123,9 @@ func probeHost(h *MachineHost) *ProbeResult {
 	res.AuthOK = true
 
 	// Single remote script (one SSH exec) + retries — multi-exec was flaky over WG/SSH.
-	probeScript := `
+	// openshift-install lives in curated mock-me-ee (podman), not on host PATH.
+	eeImg := eeimage.Image()
+	probeScript := fmt.Sprintf(`
 set +e
 HN=$(hostname 2>/dev/null)
 OS=$(cat /etc/os-release 2>/dev/null | grep -E '^(NAME|VERSION)=' | tr '\n' ' ')
@@ -138,28 +141,42 @@ else
 fi
 if test -S /var/run/libvirt/libvirt-sock; then S=yes; else S=no; fi
 if command -v podman >/dev/null 2>&1; then P=$(podman --version 2>/dev/null); else P=missing; fi
-if command -v openshift-install >/dev/null 2>&1; then
-  OI=$(openshift-install version 2>/dev/null | sed -n '1p' | tr -d '\n')
-  [ -n "$OI" ] || OI=present
+EE_IMAGE=%q
+printf 'mockMeEEImage=%%s\n' "$EE_IMAGE"
+if command -v podman >/dev/null 2>&1 && podman image exists "$EE_IMAGE" 2>/dev/null; then
+  if podman run --rm "$EE_IMAGE" version >/dev/null 2>&1; then
+    EE=ready
+    OI=ee
+  else
+    EE=broken
+    OI=missing
+  fi
 else
+  EE=missing
   OI=missing
 fi
-printf 'hostname=%s\n' "$HN"
-printf 'os=%s\n' "$OS"
-printf 'arch=%s\n' "$ARCH"
-printf 'libvirtd=%s\n' "$LV"
-printf 'virsh=%s\n' "$V"
-printf 'socket=%s\n' "$S"
-printf 'podman=%s\n' "$P"
-printf 'openshiftInstall=%s\n' "$OI"
+# Legacy: host PATH installer still counted as ready (optional)
+if [ "$OI" = "missing" ] && command -v openshift-install >/dev/null 2>&1; then
+  OI=$(openshift-install version 2>/dev/null | sed -n '1p' | tr -d '\n')
+  [ -n "$OI" ] || OI=host-path
+fi
+printf 'hostname=%%s\n' "$HN"
+printf 'os=%%s\n' "$OS"
+printf 'arch=%%s\n' "$ARCH"
+printf 'libvirtd=%%s\n' "$LV"
+printf 'virsh=%%s\n' "$V"
+printf 'socket=%%s\n' "$S"
+printf 'podman=%%s\n' "$P"
+printf 'mockMeEE=%%s\n' "$EE"
+printf 'openshiftInstall=%%s\n' "$OI"
 printf 'PROBE_OK=1\n'
-`
+`, eeImg)
 
 	libvirtActive := false
 	virshOK := false
 	sockOK := false
 	podmanOK := false
-	installerOK := false
+	eeOK := false
 	out, err := sshOutputRetry(client, probeScript, 3)
 	if err != nil {
 		res.Facts["libvirtProbeError"] = truncate(err.Error()+" "+out, 200)
@@ -200,10 +217,17 @@ printf 'PROBE_OK=1\n'
 					podmanOK = true
 					res.PodmanReady = true
 				}
+			case "mockMeEEImage":
+				res.Facts["mockMeEEImage"] = val
+			case "mockMeEE":
+				res.Facts["mockMeEE"] = val
+				if val == "ready" {
+					eeOK = true
+					res.EEReady = true
+				}
 			case "openshiftInstall":
 				res.Facts["openshiftInstall"] = val
 				if val != "" && val != "missing" {
-					installerOK = true
 					res.InstallerReady = true
 				}
 			}
@@ -230,37 +254,45 @@ printf 'PROBE_OK=1\n'
 
 	if !podmanOK {
 		res.Issues = append(res.Issues, ProbeIssue{
-			ID: "podman-missing", Severity: "warn",
-			Message:   "podman missing — required for Deploy EE/runner (Fix this → install-podman)",
+			ID: "podman-missing", Severity: "error",
+			Message:   "podman missing — required to run curated mock-me-ee (Fix this → install-podman)",
 			Fixable:   true,
 			FixAction: FixInstallPodman,
 		})
-	}
-
-	if !installerOK {
+	} else if !eeOK {
 		res.Issues = append(res.Issues, ProbeIssue{
-			ID: "openshift-install-missing", Severity: "error",
-			Message: "openshift-install missing — required for OCP-MGMT Deploy (install client on MACHINE-HOST before Deploy)",
-			Fixable: false,
+			ID: "mock-me-ee-missing", Severity: "error",
+			Message: fmt.Sprintf(
+				"curated EE %s missing/broken — openshift-install lives in the image, not on the host (Fix this → ensure-mock-me-ee)",
+				eeimage.Image()),
+			Fixable:   true,
+			FixAction: FixEnsureMockMeEE,
 		})
 	}
 
-	// Green when libvirt is ready. Podman + openshift-install are Deploy EE prereqs (warned above).
+	// InstallerReady prefers EE; legacy host PATH still counts.
+	if eeOK {
+		res.InstallerReady = true
+	}
+
+	// Green when libvirt is ready. Podman + curated EE are Deploy prereqs (Fix this).
 	res.Orchestration = res.AuthOK && res.LibvirtReady
 	res.OK = res.Orchestration
 
 	switch {
 	case res.AuthOK && res.LibvirtReady:
 		msg := fmt.Sprintf("SSH OK to %s — libvirt ready; can orchestrate against a plan.", h.Endpoint())
-		if !podmanOK || !installerOK {
+		if !podmanOK || !eeOK {
 			missing := []string{}
 			if !podmanOK {
 				missing = append(missing, "podman")
 			}
-			if !installerOK {
-				missing = append(missing, "openshift-install")
+			if podmanOK && !eeOK {
+				missing = append(missing, "mock-me-ee")
 			}
-			msg += " Deploy EE needs: " + strings.Join(missing, ", ") + "."
+			msg += " Deploy needs: " + strings.Join(missing, ", ") + " (Fix this)."
+		} else {
+			msg += " Curated EE ready (openshift-install in container)."
 		}
 		res.Message = msg
 	case res.AuthOK && !res.LibvirtReady:

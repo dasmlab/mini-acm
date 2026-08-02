@@ -90,7 +90,7 @@ const consoleEl = ref(null)
 let timer = null
 
 const placeholderStages = [
-  { id: 'ee', label: 'Execution environment', detail: 'Prereqs: podman + openshift-install', status: 'pending', icon: 'precision_manufacturing' },
+  { id: 'ee', label: 'Execution environment', detail: 'Curated mock-me-ee via podman', status: 'pending', icon: 'precision_manufacturing' },
   { id: 'generate', label: 'Generate objects', detail: 'ISO/config artifacts', status: 'pending', icon: 'description' },
   { id: 'vinfra', label: 'Build vInfra', detail: 'libvirt net + pool + vHosts', status: 'pending', icon: 'lan' },
   { id: 'ocp', label: 'Deploy OCP + appliances', detail: 'OCP-MGMT + VyOS', status: 'pending', icon: 'memory' },

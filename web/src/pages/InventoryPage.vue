@@ -18,7 +18,7 @@
       <q-badge color="positive">libvirt ready</q-badge>
       <span class="text-grey-7">can orchestrate infra</span>
       <q-badge color="orange-9">deploy blocked</q-badge>
-      <span class="text-grey-7">missing openshift-install / podman for OCP Deploy</span>
+      <span class="text-grey-7">need podman + curated mock-me-ee (openshift-install in container)</span>
     </div>
 
     <div v-if="loading" class="row justify-center q-my-xl"><q-spinner size="3em" color="primary" /></div>
@@ -51,8 +51,8 @@
             class="q-mt-sm bg-orange-1 text-orange-10"
           >
             <template #avatar><q-icon name="block" color="orange-9" /></template>
-            OCP Deploy needs <code>openshift-install</code> on this MACHINE-HOST (podman is present for EE).
-            Install the client matching your hub version, then Probe again — MockUps Deploy stays disabled until then.
+            OCP Deploy needs the curated <code>mock-me-ee</code> image (openshift-install + oc inside the container).
+            Host only needs podman — use <b>Fix this</b> → ensure-mock-me-ee, then Probe again.
           </q-banner>
           <div v-if="h.issues?.length" class="q-mt-sm">
             <div
@@ -113,7 +113,8 @@
     <q-banner class="q-mt-lg bg-grey-2 rounded-borders" dense>
       <template #avatar><q-icon name="info" color="primary" /></template>
       Assume the host is subscribed and your SSH user can sudo (password optional in Fix).
-      Fix installs <code>libvirt</code> / <code>podman</code> on target via SSH — foundation for a later EE/runner agent container.
+      Fix installs <code>libvirt</code> / <code>podman</code> on the host, and pulls curated
+      <code>mock-me-ee</code> (openshift-install + oc in the container — not on the host PATH).
       As-a-service probes need reachability + mounted identity (<code>INVENTORY_SSH_KEY</code>).
       Use <b>Stretched</b> when the cluster sits behind a boundary and must hit the host’s VPN address
       (WireGuard install on the MACHINE-HOST is a separate stretch step — not automated here yet).
@@ -221,7 +222,8 @@ const fixLog = ref([])
 const ACTION_META = {
   'install-libvirt': { label: 'Install libvirt + qemu-kvm + start libvirtd' },
   'start-libvirtd': { label: 'Enable & start libvirtd' },
-  'install-podman': { label: 'Install podman (EE / runner agent foundation)' },
+  'install-podman': { label: 'Install podman (runs curated mock-me-ee)' },
+  'ensure-mock-me-ee': { label: 'Pull curated mock-me-ee (openshift-install + oc in container)' },
 }
 
 const fixActionOptions = computed(() => {
@@ -277,15 +279,17 @@ function statusIcon(h) {
 
 function isDeployBlocked(h) {
   if (!h || typeof h !== 'object' || h.status !== 'reachable') return false
+  const ee = String(h.facts?.mockMeEE || '').trim()
+  if (ee === 'ready') return false
   const oi = String(h.facts?.openshiftInstall || '').trim()
-  if (!oi || oi === 'missing') return true
-  const pod = String(h.facts?.podman || '').trim().toLowerCase()
-  if (!pod || pod === 'missing' || pod.includes('missing')) return true
-  return false
+  // Legacy: host PATH installer still unblocks Deploy
+  if (oi && oi !== 'missing' && oi !== 'ee') return false
+  if (oi === 'ee') return false
+  return true
 }
 
 function hasFixable(h) {
-  return (h.issues || []).some((i) => i.fixable && i.severity !== 'warn')
+  return (h.issues || []).some((i) => i.fixable)
 }
 
 async function load() {
