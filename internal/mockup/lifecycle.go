@@ -43,23 +43,26 @@ func (m *MockUp) RequireUnlocked() error {
 	return nil
 }
 
-// CleanFailed resets a failed (or stuck deploying) MockUp so Validate/Deploy can run again.
+// CleanFailed resets a failed, stuck deploying, or deployed MockUp so Validate/Deploy can run again.
 // Removes deploy-job.json; keeps derived YAML and topology. Does not touch remote host files.
 func (s *Store) CleanFailed(id string) (*MockUp, error) {
 	m, err := s.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	if m.Status.Phase != PhaseFailed && m.Status.Phase != PhaseDeploying {
-		return nil, fmt.Errorf("Clean only applies to failed/deploying MockUps (phase=%s)", m.Status.Phase)
+	switch m.Status.Phase {
+	case PhaseFailed, PhaseDeploying, PhaseDeployed:
+		// ok
+	default:
+		return nil, fmt.Errorf("Clean only applies to failed/deploying/deployed MockUps (phase=%s)", m.Status.Phase)
 	}
 	_ = os.Remove(filepath.Join(s.Dir(id), "deploy-job.json"))
 	if s.HasDerivedArtifacts(id) {
 		m.Status.Phase = PhaseValidated
-		m.Status.Message = "Cleaned after deploy failure — Validate/Deploy unlocked (remote host work left in place)"
+		m.Status.Message = "Cleaned — Validate/Deploy unlocked (remote host work left in place)"
 	} else {
 		m.Status.Phase = PhaseConfigured
-		m.Status.Message = "Cleaned after deploy failure — Derive then Validate/Deploy"
+		m.Status.Message = "Cleaned — Derive then Validate/Deploy"
 	}
 	if err := s.Save(m); err != nil {
 		return nil, err

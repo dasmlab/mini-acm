@@ -28,7 +28,7 @@
         @update:model-value="onCanvasMode"
       />
       <q-btn
-        v-if="isLocked"
+        v-if="showClean"
         outline
         color="warning"
         icon="cleaning_services"
@@ -36,7 +36,9 @@
         class="q-mr-sm"
         :loading="cleaning"
         @click="onClean"
-      />
+      >
+        <q-tooltip>Reset deploy state so Validate/Deploy can run again (leaves host VMs in place)</q-tooltip>
+      </q-btn>
       <q-btn
         outline
         color="deep-purple-7"
@@ -230,7 +232,7 @@
                     :disable="isLocked || !!eeBlockReason" :loading="deploying" @click="onDeploy">
                     <q-tooltip v-if="eeBlockReason">{{ eeBlockReason }}</q-tooltip>
                   </q-btn>
-                  <q-btn v-if="isLocked" flat color="warning" label="Clean" icon="cleaning_services"
+                  <q-btn v-if="showClean" flat color="warning" label="Clean" icon="cleaning_services"
                     :loading="cleaning" @click="onClean" />
                 </div>
               </div>
@@ -398,6 +400,11 @@ function phaseColor(phase) {
 const isLocked = computed(() => {
   const p = mockup.value?.status?.phase || ''
   return p === 'failed' || p === 'deploying'
+})
+
+const showClean = computed(() => {
+  const p = mockup.value?.status?.phase || ''
+  return p === 'failed' || p === 'deploying' || p === 'deployed'
 })
 
 const eeBlockReason = computed(() => {

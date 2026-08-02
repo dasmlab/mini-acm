@@ -70,3 +70,28 @@ func TestCleanFailedUnlocks(t *testing.T) {
 		t.Fatalf("validate after clean: err=%v ok=%v", err, res.OK)
 	}
 }
+
+func TestCleanDeployedUnlocks(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Create(CreateReq{Name: "rack-dep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Derive(m.Metadata.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetPhase(m.Metadata.ID, PhaseDeployed, "soft success"); err != nil {
+		t.Fatal(err)
+	}
+	cleaned, err := s.CleanFailed(m.Metadata.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned.Status.Phase != PhaseValidated {
+		t.Fatalf("phase after clean: %s", cleaned.Status.Phase)
+	}
+}

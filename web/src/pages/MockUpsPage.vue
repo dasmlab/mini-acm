@@ -128,7 +128,7 @@
             </q-btn>
             <q-space />
             <q-btn
-              v-if="isFailed(m) || isDeploying(m)"
+              v-if="showClean(m)"
               unelevated
               color="amber-9"
               text-color="dark"
@@ -137,7 +137,9 @@
               label="Clean"
               :loading="cleanBusy === m.metadata.id"
               @click="doClean(m)"
-            />
+            >
+              <q-tooltip>Reset deploy state so Validate/Deploy can run again (leaves host VMs in place)</q-tooltip>
+            </q-btn>
             <q-btn
               flat
               color="negative"
@@ -274,8 +276,16 @@ function isDeploying(m) {
   return (m.status?.phase || '') === 'deploying'
 }
 
+function isDeployed(m) {
+  return (m.status?.phase || '') === 'deployed'
+}
+
 function isLocked(m) {
   return isFailed(m) || isDeploying(m)
+}
+
+function showClean(m) {
+  return isFailed(m) || isDeploying(m) || isDeployed(m)
 }
 
 function canDeploy(m) {
