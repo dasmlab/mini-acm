@@ -88,6 +88,10 @@ spec:
             # Optional: oc create secret generic mock-me-ssh --from-file=id_ecdsa=... -n mock-me-system
             - name: INVENTORY_SSH_KEY
               value: /var/run/inventory-ssh/id_ecdsa
+            # Optional: oc -n mock-me-system create secret generic mock-me-ocp-pull \
+            #   --from-file=pull-secret.json=<(oc -n openshift-config get secret pull-secret -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d)
+            - name: PULL_SECRET_FILE
+              value: /var/run/secrets/openshift/pull-secret
           volumeMounts:
             - name: mock-me-data
               mountPath: /data
@@ -96,6 +100,9 @@ spec:
               readOnly: true
             - name: inventory-ssh
               mountPath: /var/run/inventory-ssh
+              readOnly: true
+            - name: ocp-pull-secret
+              mountPath: /var/run/secrets/openshift
               readOnly: true
           ports:
             - name: http
@@ -135,6 +142,13 @@ spec:
           secret:
             secretName: mock-me-ssh
             defaultMode: 0440
+            optional: true
+        - name: ocp-pull-secret
+          secret:
+            secretName: mock-me-ocp-pull
+            items:
+              - key: pull-secret.json
+                path: pull-secret
             optional: true
 
 ---

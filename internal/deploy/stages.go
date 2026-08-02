@@ -356,11 +356,15 @@ echo OCP_PREP_OK=1
 		reason := "openshift-install agent create image failed"
 		low := strings.ToLower(out)
 		switch {
+		case strings.Contains(low, "illegal base64") || strings.Contains(low, "unable to load --registry-config"):
+			reason = "pull-secret is not a valid registry auth (DEV stub or corrupt file) — set a real pull-secret in Wizard or MOCK_ME_DEV_PULL_SECRET, then Clean + Deploy"
 		case strings.Contains(low, "unknown field") || strings.Contains(low, "not valid networkstate"):
 			reason = "agent-config nmstate invalid (check static network YAML)"
 		case strings.Contains(low, `exec: "nmstatectl"`) || strings.Contains(low, "nmstatectl: executable file not found"):
 			reason = "EE image missing nmstatectl (rebuild/push mock-me-ee with nmstate)"
-		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret") || strings.Contains(low, "unauthorized"):
+		case strings.Contains(low, "unauthorized") || strings.Contains(low, "authentication required") || strings.Contains(low, "denied"):
+			reason = "pull-secret unauthorized for quay.io/openshift-release-dev — use a real OpenShift pull secret"
+		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret"):
 			reason = "pull-secret invalid or unauthorized for release image"
 		}
 		return blocked(fmt.Sprintf(

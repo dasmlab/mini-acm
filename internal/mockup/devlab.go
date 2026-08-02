@@ -1,6 +1,7 @@
 package mockup
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -53,7 +54,14 @@ Generated for hands-free "Use defaults" Validate → Deploy demos.
 	}
 
 	pullPath := filepath.Join(dir, devPullSecret)
-	if _, err := os.Stat(pullPath); err != nil {
+	needPull := true
+	if b, err := os.ReadFile(pullPath); err == nil && len(b) > 0 {
+		// Keep real secrets; refresh throwaway stubs when a better source appears.
+		if !bytes.Contains(b, []byte(`"_mock_me"`)) {
+			needPull = false
+		}
+	}
+	if needPull {
 		if err := writeDevPullSecret(pullPath); err != nil {
 			return nil, err
 		}
@@ -140,19 +148,24 @@ func writeDevPullSecret(path string) error {
 		}
 	}
 
-	// Stub: valid JSON shape so tools don't choke on parse; registries will reject.
+	// Stub: valid docker-config JSON with valid base64 auth (credentials are fake).
+	// Real registry pulls still fail — Wizard / MOCK_ME_DEV_PULL_SECRET for hub ISO.
 	stub := `{
   "auths": {
     "registry.redhat.io": {
-      "auth": "REVWLUlabOnlyThrowaway",
+      "auth": "ZGV2OnRocm93YXdheQ==",
       "email": "dev-only@mock-me.local"
     },
     "cloud.openshift.com": {
-      "auth": "REVWLUlabOnlyThrowaway",
+      "auth": "ZGV2OnRocm93YXdheQ==",
       "email": "dev-only@mock-me.local"
     },
     "quay.io": {
-      "auth": "REVWLUlabOnlyThrowaway",
+      "auth": "ZGV2OnRocm93YXdheQ==",
+      "email": "dev-only@mock-me.local"
+    },
+    "registry.connect.redhat.com": {
+      "auth": "ZGV2OnRocm93YXdheQ==",
       "email": "dev-only@mock-me.local"
     }
   },
