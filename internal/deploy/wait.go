@@ -59,13 +59,14 @@ echo "HUB_STATE=$STATE"
 echo "POLL_ATTEMPT=%d"
 set +e
 # Prefer installer wait-for — bootstrap API often returns readyz 200 before final oc auth works.
-WAIT_OUT=$(podman run --rm \
+# Note: agent wait-for has no --timeout flag; bound with coreutils timeout.
+WAIT_OUT=$(timeout 100s podman run --rm \
   --add-host "${API_HOST}:${HUB_IP}" \
   --add-host "${API_INT_HOST}:${HUB_IP}" \
   --dns 10.77.30.1 \
   -v "$ROOT/hub:/output:Z" \
   --entrypoint /usr/local/bin/openshift-install \
-  "$EE_IMAGE" agent wait-for install-complete --dir /output --timeout=90s 2>&1)
+  "$EE_IMAGE" agent wait-for install-complete --dir /output 2>&1)
 WAIT_RC=$?
 echo "$WAIT_OUT" | tail -n 25
 if [ "$WAIT_RC" -eq 0 ]; then
