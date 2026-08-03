@@ -421,8 +421,11 @@ echo OCP_PREP_OK=1
 			reason = "agent-config nmstate invalid (check static network YAML)"
 		case strings.Contains(low, `exec: "nmstatectl"`) || strings.Contains(low, "nmstatectl: executable file not found"):
 			reason = "EE image missing nmstatectl (rebuild/push mock-me-ee with nmstate)"
-		case strings.Contains(low, "unauthorized") || strings.Contains(low, "authentication required") || strings.Contains(low, "denied"):
+		case strings.Contains(low, "unauthorized") || strings.Contains(low, "authentication required") ||
+			strings.Contains(low, "pull secret") && (strings.Contains(low, "denied") || strings.Contains(low, "401") || strings.Contains(low, "403")):
 			reason = "pull-secret unauthorized for quay.io/openshift-release-dev — use a real OpenShift pull secret"
+		case strings.Contains(low, "cannot generate iso") || strings.Contains(low, "configuration errors"):
+			reason = "agent create image failed on config (nmstate/install-config) — check host stdout above"
 		case strings.Contains(low, "pull secret") || strings.Contains(low, "pull-secret"):
 			reason = "pull-secret invalid or unauthorized for release image"
 		}
