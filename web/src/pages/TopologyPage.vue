@@ -62,6 +62,28 @@
       </q-btn>
       <q-btn
         outline
+        color="teal-9"
+        icon="cloud_upload"
+        label="Import & track"
+        class="q-mr-sm"
+        :loading="importing"
+        @click="onImportTrack"
+      >
+        <q-tooltip>Register MockUp as cheapcloud tracked footprint (price + track)</q-tooltip>
+      </q-btn>
+      <q-chip
+        v-if="trackedSummary"
+        dense
+        outline
+        color="teal"
+        class="q-mr-sm"
+        clickable
+        @click="refreshTracked"
+      >
+        {{ trackedSummary }}
+      </q-chip>
+      <q-btn
+        outline
         color="orange-9"
         icon="rocket_launch"
         label="Deploy"
@@ -109,6 +131,36 @@
               <q-item-section>
                 <q-item-label>Other appliance</q-item-label>
                 <q-item-label caption>Generic NF / middleware on a vHost</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-separator />
+            <q-item-label header>Cloud model (Design bench)</q-item-label>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-vnet', 'Virtual network')">
+              <q-item-section avatar><q-icon name="lan" color="teal" /></q-item-section>
+              <q-item-section>
+                <q-item-label>Virtual network</q-item-label>
+                <q-item-label caption>Azure/CSP VNet boundary</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-vm-spot', 'Spot VM')">
+              <q-item-section avatar><q-icon name="bolt" color="teal" /></q-item-section>
+              <q-item-section>
+                <q-item-label>Spot VM</q-item-label>
+                <q-item-label caption>Interruptible compute</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-ocp-sno-slim', 'OCP SNO slim (Spot)')">
+              <q-item-section avatar><q-icon name="hub" color="red" /></q-item-section>
+              <q-item-section>
+                <q-item-label>OCP SNO slim (Spot)</q-item-label>
+                <q-item-label caption>Flagship Spot profile</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-r2', 'R2 object store')">
+              <q-item-section avatar><q-icon name="cloud" color="orange" /></q-item-section>
+              <q-item-section>
+                <q-item-label>R2 object store</q-item-label>
+                <q-item-label caption>Surfing / media storage</q-item-label>
               </q-item-section>
             </q-item>
             <q-item disable>
@@ -373,7 +425,7 @@ import DeployAssemblyDialog from 'src/components/DeployAssemblyDialog.vue'
 import ValidateWalkDialog from 'src/components/ValidateWalkDialog.vue'
 import CostMeDialog from 'src/components/CostMeDialog.vue'
 import {
-  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, costMeMockup, deployMockup, cleanMockup, listInventory, imageSetName,
+  getMockup, saveMockup, patchLayout, addCluster, deleteCluster, deriveMockup, validateMockup, costMeMockup, importMockupCheapcloud, getMockupCheapcloudTracked, deployMockup, cleanMockup, listInventory, imageSetName,
 } from 'src/services/api'
 import { enumerateVHosts, ensureCanvas, newOrphanId } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
@@ -387,6 +439,9 @@ const saving = ref(false)
 const deriving = ref(false)
 const validating = ref(false)
 const costing = ref(false)
+const importing = ref(false)
+const trackedSummary = ref('')
+const trackedPayload = ref(null)
 const costOpen = ref(false)
 const costError = ref('')
 const costUrl = ref('')
@@ -569,6 +624,14 @@ const objectRows = computed(() => {
         id: o.id, kind: 'appliance',
         title: o.label || o.id,
         sub: `${o.applianceType || 'appliance'} · ${o.runsOn || 'unlinked'}`,
+      })
+    }
+    for (const o of canvas.orphans || []) {
+      if (!String(o.kind || '').startsWith('cloud-')) continue
+      rows.push({
+        id: o.id, kind: 'cloud',
+        title: o.label || o.id,
+        sub: o.kind,
       })
     }
   }
@@ -821,6 +884,7 @@ async function load() {
     if (!layerOptions.value.some((o) => o.id === layer.value)) {
       layer.value = 'all'
     }
+    refreshTracked()
   } catch (e) {
     Notify.create({ type: 'negative', message: e.message })
   } finally {
@@ -882,6 +946,25 @@ function onAddAppliance(type) {
   if (!runsOn) {
     Notify.create({ type: 'warning', message: 'No vHost to sit on — Validate will flag this appliance.' })
   }
+}
+
+function onAddCloud(kind, label) {
+  const c = ensureCanvas(mockup.value)
+  const id = newOrphanId(kind.replace(/[^a-z0-9]+/gi, '-'))
+  const n = (c.orphans || []).filter((o) => o.kind === kind).length
+  const node = {
+    id,
+    kind,
+    label: n ? `${label} ${n + 1}` : label,
+    notes: kind,
+    x: 100 + (n % 4) * 160,
+    y: 100 + Math.floor(n / 4) * 90,
+  }
+  c.orphans.push(node)
+  if (!mockup.value.layout.nodes) mockup.value.layout.nodes = {}
+  mockup.value.layout.nodes[id] = { x: node.x, y: node.y }
+  selected.value = { id, kind: 'cloud' }
+  persist()
 }
 
 function toggleOmit(key) {
@@ -968,6 +1051,42 @@ async function onCostMe() {
     costUrl.value = data?.url || ''
   } finally {
     costing.value = false
+  }
+}
+
+async function onImportTrack() {
+  importing.value = true
+  try {
+    await persistQuiet()
+    const res = await importMockupCheapcloud(props.id)
+    if (res.mockup) mockup.value = res.mockup
+    Notify.create({ type: 'positive', message: `Tracked as ${res.product_id}` })
+    await refreshTracked()
+  } catch (e) {
+    const data = e.response?.data
+    Notify.create({ type: 'negative', message: typeof data === 'string' ? data : (data?.error || e.message) })
+  } finally {
+    importing.value = false
+  }
+}
+
+async function refreshTracked() {
+  try {
+    const res = await getMockupCheapcloudTracked(props.id)
+    trackedPayload.value = res
+    const n = res.tracked?.objects?.length || 0
+    const spend = res.tracked?.summary?.spend_usd
+    if (n > 0) {
+      trackedSummary.value = `Tracked ×${n}` + (spend != null ? ` · $${Number(spend).toFixed(2)}` : '')
+    } else if (res.product_id) {
+      trackedSummary.value = `Product ${res.product_id} (not on Home yet)`
+    } else {
+      trackedSummary.value = ''
+    }
+  } catch (_) {
+    trackedSummary.value = mockup.value?.status?.cheapcloudProductId
+      ? `Linked ${mockup.value.status.cheapcloudProductId}`
+      : ''
   }
 }
 

@@ -91,7 +91,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { enumerateVHosts, enumerateAppliances } from 'src/lib/vhosts'
+import { enumerateVHosts, enumerateAppliances, enumerateCloudBlocks } from 'src/lib/vhosts'
 import { enumerateNetwork } from 'src/lib/network'
 
 const props = defineProps({
@@ -245,6 +245,26 @@ const allNodes = computed(() => {
         runsOn: apn.runsOn,
         x, y: p.y, w: 120, h: 46, rx: 10,
         cls: apn.applianceType === 'haproxy' ? 'fill-hap' : (apn.kind === 'gateway' ? 'fill-gateway' : 'fill-appliance'),
+      })
+    })
+
+    enumerateCloudBlocks(m).forEach((cb, i) => {
+      const orphan = (m.spec.canvas?.orphans || []).find((o) => o.id === cb.id)
+      const fallback = orphan?.x != null
+        ? { x: orphan.x, y: orphan.y }
+        : { x: 140 + (i % 4) * 160, y: 120 + Math.floor(i / 4) * 90 }
+      const p = pos(cb.id, fallback)
+      out.push({
+        id: cb.id,
+        kind: 'cloud',
+        cloudKind: cb.cloudKind,
+        label: cb.label,
+        sub: cb.sub,
+        x: p.x, y: p.y, w: 150, h: 52, rx: 10,
+        cls: cb.cloudKind?.includes('r2') ? 'fill-cloud-r2'
+          : cb.cloudKind?.includes('sno') ? 'fill-cloud-sno'
+            : cb.cloudKind?.includes('vm') ? 'fill-cloud-vm'
+              : 'fill-cloud',
       })
     })
   }
@@ -544,6 +564,10 @@ function onClick(n) {
 .fill-gateway { fill: #c62828; }
 .fill-appliance { fill: #6d4c41; }
 .fill-hap { fill: #5d4037; }
+.fill-cloud { fill: #1f7a6c; }
+.fill-cloud-vm { fill: #2ea090; }
+.fill-cloud-sno { fill: #c62828; }
+.fill-cloud-r2 { fill: #f57c00; }
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }

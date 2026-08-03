@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -97,6 +98,9 @@ func (s *Server) routes() chi.Router {
 			r.Post("/mockups/{id}/seed-dev-lab", s.seedDevLab)
 			r.Post("/mockups/{id}/validate", s.validateMockup)
 			r.Post("/mockups/{id}/cost-me", s.costMeMockup)
+			r.Post("/mockups/{id}/import-cheapcloud", s.importCheapcloud)
+			r.Get("/mockups/{id}/cheapcloud-tracked", s.cheapcloudTracked)
+			r.Get("/model/catalog", s.modelCatalog)
 			r.Post("/mockups/{id}/deploy", s.deployMockup)
 			r.Get("/mockups/{id}/deploy", s.getDeploy)
 			r.Post("/mockups/{id}/clean", s.cleanMockup)
@@ -381,7 +385,99 @@ func (s *Server) costMeMockup(w http.ResponseWriter, r *http.Request) {
 		"targets": req.Targets,
 		"url":     s.cheapcloud.BaseURL,
 		"report":  report,
+		"product_id": req.ProductID,
 		"mockup":  m,
+	})
+}
+
+func (s *Server) importCheapcloud(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.cheapcloud == nil {
+		http.Error(w, "cheapcloud client not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		AttachPolicy string `json:"attach_policy"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	req := cheapcloud.ImportBody(m, body.AttachPolicy)
+	res, err := s.cheapcloud.ImportMockUp(req)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": err.Error(),
+			"url":   s.cheapcloud.BaseURL,
+			"req":   req,
+		})
+		return
+	}
+	m.Status.CheapcloudProductID = req.ProductID
+	m.Status.CheapcloudTrackedAt = time.Now().UTC().Format(time.RFC3339)
+	m.Metadata.UpdatedAt = m.Status.CheapcloudTrackedAt
+	if err := s.store.Save(m); err != nil {
+		// fall through — import succeeded remotely
+		_ = err
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"product_id": req.ProductID,
+		"import":     res,
+		"url":        s.cheapcloud.BaseURL,
+		"mockup":     m,
+	})
+}
+
+func (s *Server) cheapcloudTracked(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	m, err := s.store.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.cheapcloud == nil {
+		http.Error(w, "cheapcloud client not configured", http.StatusServiceUnavailable)
+		return
+	}
+	tracked, err := s.cheapcloud.TrackedByMockUp(m.Metadata.ID)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error":      err.Error(),
+			"url":        s.cheapcloud.BaseURL,
+			"product_id": cheapcloud.ProductID(m),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"product_id": cheapcloud.ProductID(m),
+		"url":        s.cheapcloud.BaseURL,
+		"tracked":    tracked,
+		"mockup":     m,
+	})
+}
+
+// modelCatalog exposes Design-bench-style cloud palette for the Model UI.
+func (s *Server) modelCatalog(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"groups": []map[string]any{
+			{"id": "network", "label": "Network", "order": 10},
+			{"id": "compute", "label": "Compute", "order": 20},
+			{"id": "storage", "label": "Storage", "order": 30},
+			{"id": "security", "label": "Security", "order": 40},
+		},
+		"items": []map[string]any{
+			{"id": "cloud-vnet", "group": "network", "label": "Virtual network", "kind": "cloud-vnet", "icon": "lan", "defaults": map[string]any{"cidr": "10.42.0.0/16"}},
+			{"id": "cloud-subnet", "group": "network", "label": "Subnet", "kind": "cloud-subnet", "icon": "segment", "defaults": map[string]any{"cidr": "10.42.1.0/24"}},
+			{"id": "cloud-vm-spot", "group": "compute", "label": "Spot VM", "kind": "cloud-vm-spot", "icon": "bolt", "defaults": map[string]any{"spot": true, "count": 1}},
+			{"id": "cloud-ocp-sno-slim", "group": "compute", "label": "OCP SNO slim (Spot)", "kind": "cloud-ocp-sno-slim", "icon": "hub", "defaults": map[string]any{"spot": true, "sku": "Standard_D8s_v3"}},
+			{"id": "cloud-r2", "group": "storage", "label": "R2 object store", "kind": "cloud-r2", "icon": "cloud", "defaults": map[string]any{"storage_gb": 8}},
+			{"id": "cloud-nsg", "group": "security", "label": "Network security group", "kind": "cloud-nsg", "icon": "security", "defaults": map[string]any{"default_deny_ingress": true}},
+		},
+		"notes": "Compose here → Cost me / Import & track on Topology. cheapcloud prices + tracks; mock-me models.",
 	})
 }
 

@@ -72,6 +72,30 @@ func TestCreateSetsGenreStyle(t *testing.T) {
 	}
 }
 
+func TestCreateCloudCostModel(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.Create(CreateReq{
+		Name: "cloud1", Genre: GenreInfrastructure, Style: StyleCloudCostModel,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Spec.Style != StyleCloudCostModel || m.Spec.CanvasMode != "freeform" {
+		t.Fatalf("cloud model: style=%s mode=%s", m.Spec.Style, m.Spec.CanvasMode)
+	}
+	if m.Status.CheapcloudProductID == "" {
+		t.Fatal("expected cheapcloud product id seeded")
+	}
+	res := ValidateTopology(m)
+	if !res.OK {
+		t.Fatalf("cloud validate: %+v", res)
+	}
+}
+
 func TestCreateSingleSNO(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewStore(dir)

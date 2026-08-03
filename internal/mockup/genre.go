@@ -17,6 +17,7 @@ const (
 	StyleWindowsUI            = "windows-ui"
 	StyleWebFullStack         = "web-full-stack"
 	StyleInfraNodeNetwork     = "infra-node-network-payload"
+	StyleCloudCostModel       = "cloud-cost-model" // Design-bench port: multi-cloud price+track palette
 	StyleSelfServePersonalCDN = "self-serve-cloud-personal-cdn"
 	StyleSurfingCdnR2         = "surfing-cdn-r2" // golden implementation example of Self-Serve Personal CDN
 )
@@ -150,6 +151,22 @@ func Catalog() CatalogResponse {
 			},
 		},
 		{
+			ID: StyleCloudCostModel, Genre: GenreInfrastructure,
+			Label:       "Cloud cost model",
+			Description: "Design-bench port: compose Azure Spot / OCP SNO slim / R2 blocks, then Cost me + Import & track into cheapcloud. Modeling lives here; cheapcloud prices and tracks.",
+			Available:   true,
+			ObjectTypes: []string{
+				"cloud-vnet", "cloud-subnet", "cloud-vm-spot", "cloud-ocp-sno-slim", "cloud-r2", "cloud-nsg",
+			},
+			Views:       []string{"all", "network", "compute", "storage"},
+			DefaultSeed: "free-form cloud palette — vnet + spot / SNO / R2",
+			Relations: []RelationRule{
+				{From: "cloud-subnet", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
+				{From: "cloud-vm-spot", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
+				{From: "cloud-ocp-sno-slim", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
+			},
+		},
+		{
 			ID: StyleSelfServePersonalCDN, Genre: GenreContentManagement,
 			Label:       "Self-Serve Cloud Personal CDN",
 			Description: "Customer-held keys + pass-through cloud bill (~$1 service for index/site-CDN/migrate). Portal → OAuth2/SSO to CF/Azure/GCP → BYO bucket backend → Edge CDN → catalog/index (cdn-mgr). Surfing is the golden live example. cheapcloud profiles free-tier burn; mock-me templates this for cdn-mgr later.",
@@ -218,8 +235,8 @@ func Catalog() CatalogResponse {
 		},
 		{
 			ID: GenreInfrastructure, Label: "Infrastructure",
-			Description: "Hosts, networks, and payloads without a cluster-management control plane.",
-			Styles:      []string{StyleInfraNodeNetwork},
+			Description: "Hosts, networks, payloads, and multi-cloud cost models (Design bench → Model).",
+			Styles:      []string{StyleCloudCostModel, StyleInfraNodeNetwork},
 		},
 		{
 			ID: GenreContentManagement, Label: "Content Management",

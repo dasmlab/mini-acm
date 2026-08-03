@@ -123,8 +123,24 @@ export async function cleanMockup(id) {
   return data
 }
 
-export async function costMeMockup(id) {
-  const { data } = await api.post(`/mockups/${id}/cost-me`, undefined, { timeout: 60_000 })
+export async function costMeMockup(id, { register = false } = {}) {
+  const q = register ? '?register=1' : ''
+  const { data } = await api.post(`/mockups/${id}/cost-me${q}`, undefined, { timeout: 60_000 })
+  return data
+}
+
+export async function importMockupCheapcloud(id, body = {}) {
+  const { data } = await api.post(`/mockups/${id}/import-cheapcloud`, body, { timeout: 60_000 })
+  return data
+}
+
+export async function getMockupCheapcloudTracked(id) {
+  const { data } = await api.get(`/mockups/${id}/cheapcloud-tracked`, { timeout: 30_000 })
+  return data
+}
+
+export async function getModelCatalog() {
+  const { data } = await api.get('/model/catalog')
   return data
 }
 

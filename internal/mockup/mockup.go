@@ -236,8 +236,10 @@ type GapParams struct {
 }
 
 type Status struct {
-	Phase   Phase  `json:"phase" yaml:"phase"`
-	Message string `json:"message,omitempty" yaml:"message,omitempty"`
+	Phase               Phase  `json:"phase" yaml:"phase"`
+	Message             string `json:"message,omitempty" yaml:"message,omitempty"`
+	CheapcloudProductID  string `json:"cheapcloudProductId,omitempty" yaml:"cheapcloudProductId,omitempty"`
+	CheapcloudTrackedAt  string `json:"cheapcloudTrackedAt,omitempty" yaml:"cheapcloudTrackedAt,omitempty"`
 }
 
 // Layout stores SVG canvas positions (interview-me mind-map style).
@@ -312,8 +314,55 @@ func seedMockUp(style, id, name, domain, provider, notes, now string) *MockUp {
 	switch style {
 	case StyleSingleSNOOCP:
 		return defaultSingleSNOMockUp(id, name, domain, provider, notes, now)
+	case StyleCloudCostModel:
+		return defaultCloudCostModel(id, name, domain, provider, notes, now)
 	default:
 		return defaultMockUp(id, name, domain, provider, notes, now)
+	}
+}
+
+func defaultCloudCostModel(id, name, domain, provider, notes, now string) *MockUp {
+	if provider == "" || provider == "libvirt" {
+		provider = "multi-cloud"
+	}
+	return &MockUp{
+		APIVersion: "mock-me.dasmlab.org/v1alpha1",
+		Kind:       "MockUp",
+		Metadata: Metadata{
+			ID: id, Name: name, CreatedAt: now, UpdatedAt: now, Notes: notes,
+		},
+		Spec: Spec{
+			Genre:      GenreInfrastructure,
+			Style:      StyleCloudCostModel,
+			BaseDomain: domain,
+			Provider:   provider,
+			CanvasMode: "freeform",
+			Canvas: &CanvasSpec{
+				ShowRelations: false,
+				OmitHost:      true,
+				OmitGateway:   true,
+				OmitHub:       true,
+				OmitACM:       true,
+				Orphans: []CanvasNode{
+					{ID: "vnet-1", Kind: "cloud-vnet", Label: "cc-vnet", Notes: "cidr=10.42.0.0/16", X: 80, Y: 80},
+					{ID: "sno-1", Kind: "cloud-ocp-sno-slim", Label: "OCP SNO slim (Spot)", Notes: "sku=Standard_D8s_v3", X: 320, Y: 140},
+				},
+			},
+			Network: NetworkSpec{
+				MachineCIDR: "10.42.0.0/16",
+				Gateway:     "10.42.0.1",
+			},
+			InfraHost: InfraHostNode{ID: "infra-host", Label: "unused", Hostname: "n/a"},
+			Gateway:   GatewayNode{ID: "gateway", Label: "unused"},
+			Hub:       HubNode{ID: "hub", Label: "unused"},
+			ACM:       ACMNode{Enabled: false},
+			Clusters:  nil,
+		},
+		Status: Status{Phase: PhaseCreated, CheapcloudProductID: "mock-me-" + id},
+		Layout: Layout{Nodes: map[string]NodePos{
+			"vnet-1": {X: 80, Y: 80},
+			"sno-1":  {X: 320, Y: 140},
+		}},
 	}
 }
 

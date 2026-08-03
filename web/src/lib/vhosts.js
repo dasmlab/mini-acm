@@ -80,6 +80,25 @@ export function enumerateAppliances(m) {
   return out
 }
 
+/** Design-bench / Model cloud blocks stored as canvas orphans (kind cloud-*). */
+export function enumerateCloudBlocks(m) {
+  const out = []
+  for (const o of m?.spec?.canvas?.orphans || []) {
+    if (!String(o.kind || '').startsWith('cloud-')) continue
+    out.push({
+      id: o.id,
+      kind: 'cloud',
+      cloudKind: o.kind,
+      label: o.label || o.kind,
+      sub: o.notes || o.kind,
+      orphan: true,
+      x: o.x,
+      y: o.y,
+    })
+  }
+  return out
+}
+
 export function ensureCanvas(m) {
   if (!m.spec.canvas) {
     m.spec.canvas = { orphans: [], showRelations: false }

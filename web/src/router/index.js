@@ -14,6 +14,7 @@ const routes = [
     children: [
       { path: '', name: 'home', component: () => import('src/pages/HomePage.vue'), meta: { admin: true } },
       { path: 'mockups', name: 'mockups', component: () => import('src/pages/MockUpsPage.vue'), meta: { admin: true } },
+      { path: 'model', name: 'model', component: () => import('src/pages/ModelPage.vue'), meta: { admin: true } },
       { path: 'inventory', name: 'inventory', component: () => import('src/pages/InventoryPage.vue'), meta: { admin: true } },
       {
         path: 'mockups/:id/topology',

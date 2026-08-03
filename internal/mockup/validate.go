@@ -1,6 +1,9 @@
 package mockup
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ValidationIssue is one topology problem (free-form teaching validate collects many).
 type ValidationIssue struct {
@@ -52,16 +55,39 @@ func ValidateTopology(m *MockUp) ValidationResult {
 	if clusters == nil {
 		clusters = []ClusterNode{}
 	}
-	style := m.Spec.Style
-	if style == "" {
-		style = StyleACMMultiCluster
-	}
-	isSNOOnly := style == StyleSingleSNOOCP
-
 	orphans := []CanvasNode{}
 	if m.Spec.Canvas != nil {
 		orphans = m.Spec.Canvas.Orphans
 	}
+	style := m.Spec.Style
+	if style == "" {
+		style = StyleACMMultiCluster
+	}
+	// Cloud cost models are Design-bench canvases — no lab rack required.
+	if style == StyleCloudCostModel {
+		cloudN := 0
+		for _, o := range orphans {
+			if strings.HasPrefix(o.Kind, "cloud-") {
+				cloudN++
+			}
+		}
+		if cloudN == 0 {
+			res.Issues = append(res.Issues, ValidationIssue{
+				Code: "cloud-empty", Severity: "warn",
+				Message: "Add cloud blocks (VNet, Spot VM, OCP SNO slim, R2) from the free-form palette.",
+			})
+		}
+		errs := 0
+		for _, i := range res.Issues {
+			if i.Severity == "error" {
+				errs++
+			}
+		}
+		res.OK = errs == 0
+		res.Summary = fmt.Sprintf("cloud cost model · %d blocks", cloudN)
+		return res
+	}
+	isSNOOnly := style == StyleSingleSNOOCP
 
 	// --- style-specific minimum picture ---
 	if isSNOOnly {
