@@ -73,7 +73,7 @@ image-ee-push: ## Push mock-me-ee to GHCR
 
 .PHONY: lab-e2e
 lab-e2e: build ## Headless lab: OCP-MGMT + ACM to done (needs seed host + pull-secret)
-	MOCK_ME_LAB_E2E=1 ./$(BIN_DIR)/$(BINARY_NAME) lab-e2e \
+	set -o pipefail; MOCK_ME_LAB_E2E=1 ./$(BIN_DIR)/$(BINARY_NAME) lab-e2e \
 		--host $${LAB_E2E_HOST:-10.50.0.3} \
 		--user $${LAB_E2E_USER:-dasm} \
 		--identity $${INVENTORY_SSH_KEY:-$$HOME/.ssh/id_ecdsa} \

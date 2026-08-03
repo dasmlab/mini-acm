@@ -31,7 +31,7 @@ func localHubKubeconfigPath(dataRoot, mockupName string) string {
 	return filepath.Join(dataRoot, fmt.Sprintf("hub-%s", name), "auth", "kubeconfig")
 }
 
-// waitForHubInstall polls the inventory host until agent install produces a usable kubeconfig.
+// waitForHubInstall polls until agent install-complete (preferred) or live API via oc.
 func (e *Engine) waitForHubInstall(j *Job, remoteRoot, hubName, hubIP, apiHost, apiIntHost string) (string, error) {
 	deadline := time.Now().Add(ocpWaitTimeout())
 	img := EEImage()
@@ -57,26 +57,38 @@ KC="$ROOT/hub/auth/kubeconfig"
 STATE=$(virsh --connect qemu:///system domstate "$HUB" 2>/dev/null | tr -d '\n' || echo missing)
 echo "HUB_STATE=$STATE"
 echo "POLL_ATTEMPT=%d"
+set +e
+# Prefer installer wait-for — bootstrap API often returns readyz 200 before final oc auth works.
+WAIT_OUT=$(podman run --rm \
+  --add-host "${API_HOST}:${HUB_IP}" \
+  --add-host "${API_INT_HOST}:${HUB_IP}" \
+  --dns 10.77.30.1 \
+  -v "$ROOT/hub:/output:Z" \
+  --entrypoint /usr/local/bin/openshift-install \
+  "$EE_IMAGE" agent wait-for install-complete --dir /output --timeout=90s 2>&1)
+WAIT_RC=$?
+echo "$WAIT_OUT" | tail -n 25
+if [ "$WAIT_RC" -eq 0 ]; then
+  echo "INSTALL_COMPLETE=1"
+fi
+# Boot flip once RHCOS partitions exist (before BIP reboot loops back to agent ISO).
+if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
+  PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
+    "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
+  echo "DISK_PARTS=$PARTS"
+  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null; then
+    virt-xml "$HUB" --edit --boot hd,cdrom --define 2>/dev/null || true
+    virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
+    virsh change-media "$HUB" hdc --eject --config 2>/dev/null || true
+    touch /tmp/mock-me-hub-boot-hd.done
+    echo "BOOT_FLIPPED_HD=1"
+  fi
+fi
 if [ -f "$KC" ]; then
   echo "KUBECONFIG_PRESENT=1"
-  set +e
-  # Prefer IP in kubeconfig for seed-side oc (lab DNS may not be in host /etc/hosts).
   sed -i.bak-lab -e "s|https://api\\.[^:]*:6443|https://${HUB_IP}:6443|" "$KC" 2>/dev/null || true
   grep -q 'insecure-skip-tls-verify' "$KC" || sed -i -e "s|server: https://${HUB_IP}:6443|insecure-skip-tls-verify: true\\n    server: https://${HUB_IP}:6443|" "$KC" 2>/dev/null || true
-  # After RHCOS lands on disk, flip boot to hd so BIP reboot does not re-enter agent ISO.
-  if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
-    PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
-      "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
-    echo "DISK_PARTS=$PARTS"
-    if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null; then
-      virt-xml "$HUB" --edit --boot hd,cdrom --define 2>/dev/null || true
-      virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
-      virsh change-media "$HUB" hdc --eject --config 2>/dev/null || true
-      touch /tmp/mock-me-hub-boot-hd.done
-      echo "BOOT_FLIPPED_HD=1"
-    fi
-  fi
   podman run --rm \
     --add-host "${API_HOST}:${HUB_IP}" \
     --add-host "${API_INT_HOST}:${HUB_IP}" \
@@ -86,26 +98,16 @@ if [ -f "$KC" ]; then
     --entrypoint /usr/local/bin/oc \
     "$EE_IMAGE" get ns default >/dev/null 2>&1
   OC_RC=$?
-  set -e
   if [ "$OC_RC" -eq 0 ]; then
     echo "API_OK=1"
   else
     echo "API_OK=0"
-    curl -k -s -o /dev/null -w "READYZ_IP=%%{http_code}\n" --connect-timeout 2 "https://${HUB_IP}:6443/readyz" || echo READYZ_IP=fail
   fi
 else
   echo "KUBECONFIG_PRESENT=0"
-  # Nudge progress / collect breadcrumbs (short timeout; loop continues).
-  set +e
-  podman run --rm \
-    --add-host "${API_HOST}:${HUB_IP}" \
-    --add-host "${API_INT_HOST}:${HUB_IP}" \
-    --dns 10.77.30.1 \
-    -v "$ROOT/hub:/output:Z" \
-    --entrypoint /usr/local/bin/openshift-install \
-    "$EE_IMAGE" agent wait-for bootstrap-complete --dir /output --timeout=45s 2>&1 | tail -n 20 || true
-  set -e
 fi
+curl -k -s -o /dev/null -w "READYZ_IP=%%{http_code}\n" --connect-timeout 2 "https://${HUB_IP}:6443/readyz" || echo READYZ_IP=fail
+set -e
 `, remoteRoot, img, hubName, hubIP, apiHost, apiIntHost, attempt)
 
 		out, _, err := e.inv.RunScript(j.InventoryID, script)
@@ -117,7 +119,7 @@ fi
 			last = trimHostOut(out)
 			e.log(j, StageOCP, "poll #%d hub_state / kubeconfig:\n%s", attempt, last)
 			_ = e.SaveJob(j)
-			if strings.Contains(out, "API_OK=1") {
+			if strings.Contains(out, "INSTALL_COMPLETE=1") || strings.Contains(out, "API_OK=1") {
 				raw, rerr := e.inv.ReadRemoteFile(j.InventoryID, remoteKC)
 				if rerr != nil {
 					return "", fmt.Errorf("read remote kubeconfig: %w", rerr)
@@ -132,7 +134,8 @@ fi
 		if remain <= 0 {
 			break
 		}
-		sleep := 60 * time.Second
+		// wait-for already burned ~90s; short gap between polls
+		sleep := 15 * time.Second
 		if remain < sleep {
 			sleep = remain
 		}
