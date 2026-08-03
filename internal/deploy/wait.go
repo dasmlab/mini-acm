@@ -58,8 +58,16 @@ STATE=$(virsh --connect qemu:///system domstate "$HUB" 2>/dev/null | tr -d '\n' 
 echo "HUB_STATE=$STATE"
 echo "POLL_ATTEMPT=%d"
 set +e
-# Prefer installer wait-for — bootstrap API often returns readyz 200 before final oc auth works.
-# Note: agent wait-for has no --timeout flag; bound with coreutils timeout.
+# Keep asset kubeconfig pristine for openshift-install (CA + insecure together is rejected).
+# Resolve api/api-int via --add-host / libvirt DNS instead of rewriting the server URL.
+if [ -f "$KC" ] && grep -q 'insecure-skip-tls-verify' "$KC"; then
+  if [ -f "$KC.bak-lab" ]; then cp -a "$KC.bak-lab" "$KC"; fi
+  if [ -f "$KC.bak" ]; then cp -a "$KC.bak" "$KC"; fi
+  # Last resort: strip insecure line if bak missing.
+  grep -v 'insecure-skip-tls-verify' "$KC" > "$KC.fix" 2>/dev/null && mv "$KC.fix" "$KC"
+  echo "KUBECONFIG_RESTORED=1"
+fi
+# Prefer installer wait-for. No --timeout flag — bound with coreutils timeout.
 WAIT_OUT=$(timeout 100s podman run --rm \
   --add-host "${API_HOST}:${HUB_IP}" \
   --add-host "${API_INT_HOST}:${HUB_IP}" \
@@ -72,13 +80,17 @@ echo "$WAIT_OUT" | tail -n 25
 if [ "$WAIT_RC" -eq 0 ]; then
   echo "INSTALL_COMPLETE=1"
 fi
-# Boot flip once RHCOS partitions exist (before BIP reboot loops back to agent ISO).
+# Boot flip only after leaving the agent live ISO (root not squashfs/loop).
+# Partitions alone are not enough — early flip breaks agent reboot into installer.
 if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
+  ROOTFS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
+    "findmnt -n -o FSTYPE / 2>/dev/null || true" 2>/dev/null || true)
   PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
     "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
-  echo "DISK_PARTS=$PARTS"
-  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null; then
+  echo "ROOTFS=$ROOTFS DISK_PARTS=$PARTS"
+  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null && [ "$ROOTFS" != "squashfs" ] && [ -n "$ROOTFS" ]; then
     virt-xml "$HUB" --edit --boot hd,cdrom --define 2>/dev/null || true
     virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
     virsh change-media "$HUB" hdc --eject --config 2>/dev/null || true
@@ -88,13 +100,20 @@ if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
 fi
 if [ -f "$KC" ]; then
   echo "KUBECONFIG_PRESENT=1"
-  sed -i.bak-lab -e "s|https://api\\.[^:]*:6443|https://${HUB_IP}:6443|" "$KC" 2>/dev/null || true
-  grep -q 'insecure-skip-tls-verify' "$KC" || sed -i -e "s|server: https://${HUB_IP}:6443|insecure-skip-tls-verify: true\\n    server: https://${HUB_IP}:6443|" "$KC" 2>/dev/null || true
+  # Probe API with a disposable insecure copy (do not mutate asset kubeconfig).
+  cp -a "$KC" /tmp/mock-me-oc-probe.kubeconfig
+  sed -i -e "s|https://api\\.[^:]*:6443|https://${HUB_IP}:6443|" /tmp/mock-me-oc-probe.kubeconfig
+  if ! grep -q 'insecure-skip-tls-verify' /tmp/mock-me-oc-probe.kubeconfig; then
+    sed -i -e "s|server: https://${HUB_IP}:6443|insecure-skip-tls-verify: true\\n    server: https://${HUB_IP}:6443|" /tmp/mock-me-oc-probe.kubeconfig
+  fi
+  # Remove CA when using insecure — oc tolerates this better than install wait-for.
+  grep -v 'certificate-authority' /tmp/mock-me-oc-probe.kubeconfig > /tmp/mock-me-oc-probe.kubeconfig.2 2>/dev/null \
+    && mv /tmp/mock-me-oc-probe.kubeconfig.2 /tmp/mock-me-oc-probe.kubeconfig
   podman run --rm \
     --add-host "${API_HOST}:${HUB_IP}" \
     --add-host "${API_INT_HOST}:${HUB_IP}" \
     --dns 10.77.30.1 \
-    -v "$ROOT/hub/auth:/auth:Z" \
+    -v /tmp/mock-me-oc-probe.kubeconfig:/auth/kubeconfig:Z \
     -e KUBECONFIG=/auth/kubeconfig \
     --entrypoint /usr/local/bin/oc \
     "$EE_IMAGE" get ns default >/dev/null 2>&1
@@ -135,7 +154,6 @@ set -e
 		if remain <= 0 {
 			break
 		}
-		// wait-for already burned ~90s; short gap between polls
 		sleep := 15 * time.Second
 		if remain < sleep {
 			sleep = remain
