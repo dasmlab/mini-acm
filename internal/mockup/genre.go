@@ -153,17 +153,20 @@ func Catalog() CatalogResponse {
 		{
 			ID: StyleCloudCostModel, Genre: GenreInfrastructure,
 			Label:       "Cloud cost model",
-			Description: "Design-bench port: compose Azure Spot / OCP SNO slim / R2 blocks, then Cost me + Import & track into cheapcloud. Modeling lives here; cheapcloud prices and tracks.",
+			Description: "Multi-cloud Design bench: Azure / AWS / GCP Spot + OCP SNO slim + R2. Cost me + Import & track into cheapcloud.",
 			Available:   true,
 			ObjectTypes: []string{
-				"cloud-vnet", "cloud-subnet", "cloud-vm-spot", "cloud-ocp-sno-slim", "cloud-r2", "cloud-nsg",
+				"cloud-vnet", "cloud-subnet", "cloud-vm-spot", "cloud-ocp-sno-slim",
+				"cloud-aws-ec2-spot", "cloud-gcp-gce-spot", "cloud-r2", "cloud-nsg",
 			},
 			Views:       []string{"all", "network", "compute", "storage"},
-			DefaultSeed: "free-form cloud palette — vnet + spot / SNO / R2",
+			DefaultSeed: "free-form cloud palette — multi-provider Spot / SNO / R2",
 			Relations: []RelationRule{
 				{From: "cloud-subnet", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
 				{From: "cloud-vm-spot", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
 				{From: "cloud-ocp-sno-slim", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
+				{From: "cloud-aws-ec2-spot", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
+				{From: "cloud-gcp-gce-spot", Rel: "in", To: "cloud-vnet", Cardinality: "0..*"},
 			},
 		},
 		{

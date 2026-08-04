@@ -211,27 +211,62 @@ func targetsFromCloudModel(m *mockup.MockUp) []Target {
 	}
 	spot := true
 	var out []Target
-	var sno, vmSpot, r2 int
+	var snoAzure, snoAWS, snoGCP, vmAzure, vmAWS, vmGCP, r2 int
 	for _, n := range m.Spec.Canvas.Orphans {
 		switch n.Kind {
 		case "cloud-ocp-sno-slim":
-			sno++
+			// Notes may hint provider=aws|gcp
+			switch providerHint(n.Notes) {
+			case "aws":
+				snoAWS++
+			case "gcp":
+				snoGCP++
+			default:
+				snoAzure++
+			}
 		case "cloud-vm-spot":
-			vmSpot++
+			vmAzure++
+		case "cloud-aws-ec2-spot":
+			vmAWS++
+		case "cloud-gcp-gce-spot":
+			vmGCP++
 		case "cloud-r2", "cloud-object-store":
 			r2++
 		}
 	}
-	if sno > 0 {
-		out = append(out, Target{Capability: "ocp-sno-slim", Provider: "azure", Count: sno, Spot: &spot})
+	if snoAzure > 0 {
+		out = append(out, Target{Capability: "ocp-sno-slim", Provider: "azure", Count: snoAzure, Spot: &spot})
 	}
-	if vmSpot > 0 {
-		out = append(out, Target{Capability: "azure-spot-vm", Provider: "azure", Count: vmSpot, Spot: &spot})
+	if snoAWS > 0 {
+		out = append(out, Target{Capability: "ocp-sno-slim", Provider: "aws", Count: snoAWS, Spot: &spot, SKUHint: "m5.2xlarge"})
+	}
+	if snoGCP > 0 {
+		out = append(out, Target{Capability: "ocp-sno-slim", Provider: "gcp", Count: snoGCP, Spot: &spot, SKUHint: "n2-standard-8"})
+	}
+	if vmAzure > 0 {
+		out = append(out, Target{Capability: "azure-spot-vm", Provider: "azure", Count: vmAzure, Spot: &spot})
+	}
+	if vmAWS > 0 {
+		out = append(out, Target{Capability: "aws-spot-vm", Provider: "aws", Count: vmAWS, Spot: &spot, SKUHint: "m5.xlarge"})
+	}
+	if vmGCP > 0 {
+		out = append(out, Target{Capability: "gcp-spot-vm", Provider: "gcp", Count: vmGCP, Spot: &spot, SKUHint: "n2-standard-4"})
 	}
 	if r2 > 0 {
 		out = append(out, Target{Capability: "object-store", Provider: "r2", StorageGBEst: float64(8 * r2)})
 	}
 	return out
+}
+
+func providerHint(notes string) string {
+	n := strings.ToLower(notes)
+	if strings.Contains(n, "provider=aws") {
+		return "aws"
+	}
+	if strings.Contains(n, "provider=gcp") {
+		return "gcp"
+	}
+	return ""
 }
 
 // ProductID is the canonical cheapcloud product id for a MockUp: mock-me-<uuid>.
@@ -252,12 +287,9 @@ func ProductID(m *mockup.MockUp) string {
 // ImportBody builds an ImportRequest from a MockUp.
 func ImportBody(m *mockup.MockUp, attachPolicy string) ImportRequest {
 	pid := ProductID(m)
-	env := "azure-compute"
-	switch m.Spec.Style {
-	case mockup.StyleSurfingCdnR2, mockup.StyleSelfServePersonalCDN:
-		env = "surfing-cdn-storage"
-	}
-	comps := componentsFromTargets(TargetsFromMockUp(m))
+	targets := TargetsFromMockUp(m)
+	env := envelopeFromTargets(targets)
+	comps := componentsFromTargets(targets)
 	return ImportRequest{
 		ProductID:    pid,
 		DisplayName:  firstNonEmpty(m.Metadata.Name, pid),
@@ -267,6 +299,29 @@ func ImportBody(m *mockup.MockUp, attachPolicy string) ImportRequest {
 		Notes:        "imported from mock-me Model",
 		Components:   comps,
 	}
+}
+
+func envelopeFromTargets(targets []Target) string {
+	counts := map[string]int{}
+	for _, t := range targets {
+		switch strings.ToLower(t.Provider) {
+		case "aws":
+			counts["aws-compute"]++
+		case "gcp":
+			counts["gcp-compute"]++
+		case "r2", "cloudflare":
+			counts["surfing-cdn-storage"]++
+		default:
+			counts["azure-compute"]++
+		}
+	}
+	best, n := "azure-compute", 0
+	for env, c := range counts {
+		if c > n {
+			best, n = env, c
+		}
+	}
+	return best
 }
 
 func componentsFromTargets(targets []Target) []map[string]any {

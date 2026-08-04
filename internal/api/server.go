@@ -472,12 +472,14 @@ func (s *Server) modelCatalog(w http.ResponseWriter, _ *http.Request) {
 		"items": []map[string]any{
 			{"id": "cloud-vnet", "group": "network", "label": "Virtual network", "kind": "cloud-vnet", "icon": "lan", "defaults": map[string]any{"cidr": "10.42.0.0/16"}},
 			{"id": "cloud-subnet", "group": "network", "label": "Subnet", "kind": "cloud-subnet", "icon": "segment", "defaults": map[string]any{"cidr": "10.42.1.0/24"}},
-			{"id": "cloud-vm-spot", "group": "compute", "label": "Spot VM", "kind": "cloud-vm-spot", "icon": "bolt", "defaults": map[string]any{"spot": true, "count": 1}},
+			{"id": "cloud-vm-spot", "group": "compute", "label": "Azure Spot VM", "kind": "cloud-vm-spot", "icon": "bolt", "defaults": map[string]any{"spot": true, "count": 1, "provider": "azure"}},
+			{"id": "cloud-aws-ec2-spot", "group": "compute", "label": "AWS EC2 Spot", "kind": "cloud-aws-ec2-spot", "icon": "bolt", "defaults": map[string]any{"spot": true, "sku": "m5.xlarge", "provider": "aws"}},
+			{"id": "cloud-gcp-gce-spot", "group": "compute", "label": "GCP GCE Spot", "kind": "cloud-gcp-gce-spot", "icon": "bolt", "defaults": map[string]any{"spot": true, "sku": "n2-standard-4", "provider": "gcp"}},
 			{"id": "cloud-ocp-sno-slim", "group": "compute", "label": "OCP SNO slim (Spot)", "kind": "cloud-ocp-sno-slim", "icon": "hub", "defaults": map[string]any{"spot": true, "sku": "Standard_D8s_v3"}},
 			{"id": "cloud-r2", "group": "storage", "label": "R2 object store", "kind": "cloud-r2", "icon": "cloud", "defaults": map[string]any{"storage_gb": 8}},
 			{"id": "cloud-nsg", "group": "security", "label": "Network security group", "kind": "cloud-nsg", "icon": "security", "defaults": map[string]any{"default_deny_ingress": true}},
 		},
-		"notes": "Compose here → Cost me / Import & track on Topology. cheapcloud prices + tracks; mock-me models.",
+		"notes": "Multi-cloud palette → Cost me / Import & track. cheapcloud prices + tracks; mock-me models.",
 	})
 }
 

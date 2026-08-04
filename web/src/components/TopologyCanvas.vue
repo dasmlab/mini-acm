@@ -262,9 +262,11 @@ const allNodes = computed(() => {
         sub: cb.sub,
         x: p.x, y: p.y, w: 150, h: 52, rx: 10,
         cls: cb.cloudKind?.includes('r2') ? 'fill-cloud-r2'
-          : cb.cloudKind?.includes('sno') ? 'fill-cloud-sno'
-            : cb.cloudKind?.includes('vm') ? 'fill-cloud-vm'
-              : 'fill-cloud',
+          : cb.cloudKind?.includes('aws') ? 'fill-cloud-aws'
+            : cb.cloudKind?.includes('gcp') ? 'fill-cloud-gcp'
+              : cb.cloudKind?.includes('sno') ? 'fill-cloud-sno'
+                : cb.cloudKind?.includes('vm') ? 'fill-cloud-vm'
+                  : 'fill-cloud',
       })
     })
   }
@@ -568,6 +570,8 @@ function onClick(n) {
 .fill-cloud-vm { fill: #2ea090; }
 .fill-cloud-sno { fill: #c62828; }
 .fill-cloud-r2 { fill: #f57c00; }
+.fill-cloud-aws { fill: #e67e22; }
+.fill-cloud-gcp { fill: #1a73e8; }
 .fill-hub { fill: #1a237e; }
 .fill-acm { fill: #00838f; }
 .fill-cluster { fill: #1565c0; }

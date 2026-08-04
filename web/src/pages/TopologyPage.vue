@@ -139,21 +139,35 @@
               <q-item-section avatar><q-icon name="lan" color="teal" /></q-item-section>
               <q-item-section>
                 <q-item-label>Virtual network</q-item-label>
-                <q-item-label caption>Azure/CSP VNet boundary</q-item-label>
+                <q-item-label caption>CSP VNet / VPC boundary</q-item-label>
               </q-item-section>
             </q-item>
-            <q-item clickable v-close-popup @click="onAddCloud('cloud-vm-spot', 'Spot VM')">
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-vm-spot', 'Azure Spot VM')">
               <q-item-section avatar><q-icon name="bolt" color="teal" /></q-item-section>
               <q-item-section>
-                <q-item-label>Spot VM</q-item-label>
-                <q-item-label caption>Interruptible compute</q-item-label>
+                <q-item-label>Azure Spot VM</q-item-label>
+                <q-item-label caption>Interruptible Azure compute</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-aws-ec2-spot', 'AWS EC2 Spot')">
+              <q-item-section avatar><q-icon name="bolt" color="orange" /></q-item-section>
+              <q-item-section>
+                <q-item-label>AWS EC2 Spot</q-item-label>
+                <q-item-label caption>Interruptible AWS compute</q-item-label>
+              </q-item-section>
+            </q-item>
+            <q-item clickable v-close-popup @click="onAddCloud('cloud-gcp-gce-spot', 'GCP GCE Spot')">
+              <q-item-section avatar><q-icon name="bolt" color="blue" /></q-item-section>
+              <q-item-section>
+                <q-item-label>GCP GCE Spot</q-item-label>
+                <q-item-label caption>Preemptible / Spot GCE</q-item-label>
               </q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="onAddCloud('cloud-ocp-sno-slim', 'OCP SNO slim (Spot)')">
               <q-item-section avatar><q-icon name="hub" color="red" /></q-item-section>
               <q-item-section>
                 <q-item-label>OCP SNO slim (Spot)</q-item-label>
-                <q-item-label caption>Flagship Spot profile</q-item-label>
+                <q-item-label caption>Flagship Spot profile (provider via notes)</q-item-label>
               </q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="onAddCloud('cloud-r2', 'R2 object store')">
