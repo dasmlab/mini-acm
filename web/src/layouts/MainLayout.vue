@@ -58,6 +58,19 @@
             <q-item-label caption>MACHINE-HOST targets</q-item-label>
           </q-item-section>
         </q-item>
+        <q-item
+          v-if="auth.canViewActivity.value"
+          clickable
+          v-ripple
+          :to="{ name: 'activity' }"
+          active-class="text-primary bg-grey-2"
+        >
+          <q-item-section avatar><q-icon name="history" /></q-item-section>
+          <q-item-section>
+            <q-item-label>Activity</q-item-label>
+            <q-item-label caption>Login &amp; navigation log</q-item-label>
+          </q-item-section>
+        </q-item>
 
         <q-separator class="q-my-md" />
         <div class="q-px-md q-pb-md text-caption text-grey-7">

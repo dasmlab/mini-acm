@@ -16,6 +16,11 @@ export function useAuth() {
     if (!user.value) return ''
     return user.value.name || user.value.preferred_username || user.value.email || 'User'
   })
+  // Activity log UI is dasm-only (matches ACTIVITY_VIEWERS / preferred_username).
+  const canViewActivity = computed(() => {
+    if (!authEnabled.value) return true
+    return user.value?.preferred_username === 'dasm'
+  })
 
   async function init() {
     if (ready.value) return
@@ -56,6 +61,7 @@ export function useAuth() {
     loading,
     isAuthenticated,
     isAdmin,
+    canViewActivity,
     displayName,
     init,
     login,

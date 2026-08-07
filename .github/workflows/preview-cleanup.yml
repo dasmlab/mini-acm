@@ -1,0 +1,24 @@
+name: mock-me preview cleanup
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      actor:
+        description: "GitHub username whose preview to remove"
+        required: true
+
+jobs:
+  cleanup:
+    runs-on: [self-hosted]
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true || github.event.action == 'closed'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove preview namespace
+        env:
+          PREVIEW_ACTOR: ${{ inputs.actor || github.event.pull_request.user.login || github.actor }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/cleanup-preview.sh
+          ./scripts/ci/cleanup-preview.sh

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
+	"github.com/dasmlab/mock-me/internal/activity"
 	"github.com/dasmlab/mock-me/internal/auth"
 	"github.com/dasmlab/mock-me/internal/cheapcloud"
 	"github.com/dasmlab/mock-me/internal/deploy"
@@ -23,6 +25,7 @@ import (
 type Server struct {
 	store      *mockup.Store
 	inventory  *inventory.Store
+	activity   *activity.Store
 	deploy     *deploy.Engine
 	auth       *auth.Service
 	cheapcloud *cheapcloud.Client
@@ -32,14 +35,17 @@ type Server struct {
 	router     chi.Router
 }
 
-func New(store *mockup.Store, inv *inventory.Store, authSvc *auth.Service, dataDir, buildVer string, static http.Handler) *Server {
+func New(store *mockup.Store, inv *inventory.Store, act *activity.Store, authSvc *auth.Service, dataDir, buildVer string, static http.Handler) *Server {
 	if authSvc == nil {
 		authSvc, _ = auth.New(context.Background(), auth.Config{})
 	}
 	s := &Server{
-		store: store, inventory: inv, deploy: deploy.NewEngine(store, inv),
+		store: store, inventory: inv, activity: act, deploy: deploy.NewEngine(store, inv),
 		auth: authSvc, cheapcloud: cheapcloud.NewFromEnv(),
 		dataDir: dataDir, buildVer: buildVer, static: static,
+	}
+	if s.activity != nil {
+		s.auth.OnLogin = s.recordLogin
 	}
 	s.router = s.routes()
 	return s
@@ -113,6 +119,9 @@ func (s *Server) routes() chi.Router {
 			r.Post("/inventory/{id}/probe", s.probeInventory)
 			r.Post("/inventory/{id}/fix", s.fixInventory)
 			r.Delete("/inventory/{id}", s.deleteInventory)
+
+			r.Post("/activity", s.postActivity)
+			r.With(s.auth.ActivityViewerGate).Get("/activity", s.listActivity)
 		})
 	})
 
@@ -790,6 +799,86 @@ func (s *Server) deleteInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) recordLogin(user *auth.User) {
+	if s.activity == nil || user == nil {
+		return
+	}
+	_ = s.activity.Append(activity.Event{
+		Type:  activity.TypeLogin,
+		User:  user.PreferredUsername,
+		Sub:   user.Sub,
+		Email: user.Email,
+	})
+}
+
+func (s *Server) postActivity(w http.ResponseWriter, r *http.Request) {
+	if s.activity == nil {
+		http.Error(w, "activity not configured", http.StatusServiceUnavailable)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok || user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var body struct {
+		Type      string `json:"type"`
+		Path      string `json:"path"`
+		DwellMs   int64  `json:"dwellMs"`
+		VisibleMs int64  `json:"visibleMs"`
+		EngagedMs int64  `json:"engagedMs"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	typ := strings.TrimSpace(body.Type)
+	if typ == "" {
+		typ = activity.TypeNavigate
+	}
+	if typ != activity.TypeNavigate && typ != activity.TypeEngaged {
+		http.Error(w, "type must be navigate or engaged", http.StatusBadRequest)
+		return
+	}
+	ev := activity.Event{
+		Type:      typ,
+		User:      user.PreferredUsername,
+		Sub:       user.Sub,
+		Email:     user.Email,
+		Path:      strings.TrimSpace(body.Path),
+		DwellMs:   body.DwellMs,
+		VisibleMs: body.VisibleMs,
+		EngagedMs: body.EngagedMs,
+	}
+	if err := s.activity.Append(ev); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true})
+}
+
+func (s *Server) listActivity(w http.ResponseWriter, r *http.Request) {
+	if s.activity == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"events": []any{}})
+		return
+	}
+	limit := 200
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	events, err := s.activity.List(limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if events == nil {
+		events = []activity.Event{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
