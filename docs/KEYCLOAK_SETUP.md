@@ -16,16 +16,21 @@ Same dasmlab realm pattern as interview-me.
 
 1. Client type: OpenID Connect · Client ID: `mock-me`
 2. Client authentication: **ON** · Standard flow: ON
-3. Redirect URIs:
+3. Redirect URIs (Keycloak does **not** honor `https://dev-*-…` wildcards reliably —
+   add an **explicit** host per developer preview, same as interview-me):
    - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
-   - `https://dev-*-mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
-   - `https://*.apps.2026-prod-1.ocp.dasmlab.org/*`
+   - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/*`
+   - `https://dev-lmcdasm-mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
+   - `https://dev-lmcdasm-mock-me.apps.2026-prod-1.ocp.dasmlab.org/*`
    - `http://localhost:8080/api/v1/auth/callback`
-4. Web origins (as needed):
+   - `http://localhost:8080/*`
+4. Web origins:
    - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org`
-   - `https://dev-*-mock-me.apps.2026-prod-1.ocp.dasmlab.org`
-5. Client role: `admin` — assign to staff users (Filter by clients → mock-me)
-6. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mock-me"].roles` in the access token
+   - `https://dev-lmcdasm-mock-me.apps.2026-prod-1.ocp.dasmlab.org`
+   - `http://localhost:8080`
+5. Post-logout redirect URIs: same hosts with `/*`
+6. Client role: `admin` — assign to staff users (Filter by clients → mock-me)
+7. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mock-me"].roles` in the access token
 
 ## Env (serve / Deployment)
 
