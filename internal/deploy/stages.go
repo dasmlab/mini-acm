@@ -277,6 +277,10 @@ networking:
   - 172.30.0.0/16
 platform:
   none: {}
+additionalNTPSources:
+- 0.rhel.pool.ntp.org
+- 1.rhel.pool.ntp.org
+- time.google.com
 pullSecret: '%s'
 sshKey: |
   %s

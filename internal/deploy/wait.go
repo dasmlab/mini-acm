@@ -80,20 +80,38 @@ echo "$WAIT_OUT" | tail -n 25
 if [ "$WAIT_RC" -eq 0 ]; then
   echo "INSTALL_COMPLETE=1"
 fi
-# Boot flip only after leaving the agent live ISO (root not squashfs/loop).
-# Partitions alone are not enough — early flip breaks agent reboot into installer.
+# BIP reboot must land on HD: after image write creates partitions, flip boot and
+# eject ISO *while still on live agent*. Waiting until root leaves squashfs is too
+# late — cdrom boot re-runs --format-disk and loops the install.
+# Note: virsh dumpxml (live) may still show old boot order; --inactive is authoritative.
 if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
-  ROOTFS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
-    "findmnt -n -o FSTYPE / 2>/dev/null || true" 2>/dev/null || true)
   PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
     "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
-  echo "ROOTFS=$ROOTFS DISK_PARTS=$PARTS"
-  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null && [ "$ROOTFS" != "squashfs" ] && [ -n "$ROOTFS" ]; then
-    virt-xml "$HUB" --edit --boot hd,cdrom --define 2>/dev/null || true
-    virsh change-media "$HUB" sda --eject --config 2>/dev/null || true
-    virsh change-media "$HUB" hdc --eject --config 2>/dev/null || true
+  echo "DISK_PARTS=$PARTS"
+  WRITE_PCT=$(echo "$WAIT_OUT" | sed -n 's/.*Writing image to disk: \([0-9][0-9]*\)%%.*/\1/p' | tail -n 1)
+  echo "WRITE_PCT=${WRITE_PCT:-0}"
+  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null || [ "${WRITE_PCT:-0}" -ge 90 ] 2>/dev/null; then
+    python3 - <<'PY' || true
+import subprocess, re
+xml = subprocess.check_output(["virsh", "dumpxml", "--inactive", "hub-sno"], text=True)
+m = re.search(r"<os>[\s\S]*?</os>", xml)
+if not m:
+    raise SystemExit(0)
+os_old = m.group(0)
+os_new = re.sub(r"<boot[^/]*/>\s*", "", os_old)
+if "<type" in os_new:
+    os_new = os_new.replace("</os>", "    <boot dev=\"hd\"/>\n    <boot dev=\"cdrom\"/>\n  </os>")
+xml2 = xml.replace(os_old, os_new, 1)
+xml2 = re.sub(r"<source file=\"[^\"]*hub-sno-agent\.iso\"/>\s*", "", xml2)
+xml2 = re.sub(r"<source file='[^']*hub-sno-agent\.iso'/>\s*", "", xml2)
+open("/tmp/mock-me-hub-boot-hd.xml", "w").write(xml2)
+subprocess.check_call(["virsh", "define", "/tmp/mock-me-hub-boot-hd.xml"])
+print("BOOT_XML_HD=1")
+PY
+    virsh change-media "$HUB" sda --eject --live --config 2>/dev/null || true
+    virsh change-media "$HUB" hdc --eject --live --config 2>/dev/null || true
+    virsh change-media "$HUB" hda --eject --live --config 2>/dev/null || true
     touch /tmp/mock-me-hub-boot-hd.done
     echo "BOOT_FLIPPED_HD=1"
   fi
@@ -139,7 +157,9 @@ set -e
 			last = trimHostOut(out)
 			e.log(j, StageOCP, "poll #%d hub_state / kubeconfig:\n%s", attempt, last)
 			_ = e.SaveJob(j)
-			if strings.Contains(out, "INSTALL_COMPLETE=1") || strings.Contains(out, "API_OK=1") {
+			// Prefer installer install-complete. API_OK alone is too early for ACM
+			// (bootstrap API answers while clusterversion is still Progressing).
+			if strings.Contains(out, "INSTALL_COMPLETE=1") {
 				raw, rerr := e.inv.ReadRemoteFile(j.InventoryID, remoteKC)
 				if rerr != nil {
 					return "", fmt.Errorf("read remote kubeconfig: %w", rerr)

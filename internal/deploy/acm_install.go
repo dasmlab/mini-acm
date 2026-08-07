@@ -71,14 +71,42 @@ spec: {}
 `, acmChannel)
 }
 
+func ocRunnerSnippet(hubIP string) string {
+	if strings.TrimSpace(hubIP) == "" {
+		hubIP = "10.77.30.20"
+	}
+	// Avoid fmt verbs inside the shell snippet (fragile with nested % quoting).
+	return strings.ReplaceAll(`run_oc() {
+  # Always apply from files (podman needs -i for stdin; heredocs are fragile over SSH).
+  podman run --rm \
+    --add-host "api.lab-e2e.lab.example.net:__HUB_IP__" \
+    --add-host "api-int.lab-e2e.lab.example.net:__HUB_IP__" \
+    --dns 10.77.30.1 \
+    -v "$ROOT/acm:/acm:Z" \
+    -e KUBECONFIG=/acm/kubeconfig \
+    --entrypoint /usr/local/bin/oc \
+    "$EE_IMAGE" "$@"
+}
+prep_kc() {
+  # Disposable kubeconfig: hub IP + insecure (asset CA hostname often mismatches).
+  cp -a "$ROOT/acm/kubeconfig.src" "$ROOT/acm/kubeconfig"
+  sed -i -e "s|https://api\\.[^:]*:6443|https://__HUB_IP__:6443|" "$ROOT/acm/kubeconfig" || true
+  if ! grep -q 'insecure-skip-tls-verify' "$ROOT/acm/kubeconfig"; then
+    sed -i -e "s|server: https://__HUB_IP__:6443|insecure-skip-tls-verify: true\\n    server: https://__HUB_IP__:6443|" "$ROOT/acm/kubeconfig" || true
+  fi
+  grep -v 'certificate-authority' "$ROOT/acm/kubeconfig" > "$ROOT/acm/kubeconfig.tmp" 2>/dev/null \
+    && mv "$ROOT/acm/kubeconfig.tmp" "$ROOT/acm/kubeconfig" || true
+}
+`, "__HUB_IP__", hubIP)
+}
+
 // installACMOperators copies kubeconfig to the host and applies MCE+ACM via EE oc, waiting for CSVs.
 func (e *Engine) installACMOperators(j *Job, remoteRoot, localKC, mceChannel, acmChannel string) error {
 	kcBytes, err := os.ReadFile(localKC)
 	if err != nil {
 		return fmt.Errorf("read hub kubeconfig: %w", err)
 	}
-	remoteKC := remoteRoot + "/acm/kubeconfig"
-	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteKC, kcBytes); err != nil {
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/kubeconfig.src", kcBytes); err != nil {
 		return err
 	}
 	manifests := acmManifestBundle(mceChannel, acmChannel)
@@ -88,24 +116,45 @@ func (e *Engine) installACMOperators(j *Job, remoteRoot, localKC, mceChannel, ac
 	_ = e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/channels.txt", []byte(
 		fmt.Sprintf("ACM channel=%s MCE=%s\n", acmChannel, mceChannel)))
 
+	hubIP := "10.77.30.20"
 	img := EEImage()
+	runner := ocRunnerSnippet(hubIP)
+
+	// Wait for cluster to be usable before OLMs (API_OK alone is too early).
+	e.log(j, StageACM, "waiting for clusterversion Available before ACM operators")
+	_ = e.SaveJob(j)
+	waitCV := fmt.Sprintf(`set -eu
+ROOT=%q
+EE_IMAGE=%q
+%s
+prep_kc
+DEADLINE=$(( $(date +%%s) + 3600 ))
+while [ $(date +%%s) -lt $DEADLINE ]; do
+  set +e
+  OUT=$(run_oc get clusterversion version -o jsonpath='{.status.conditions[?(@.type=="Available")].status}{"|"}{.status.conditions[?(@.type=="Progressing")].status}{"|"}{.status.desired.version}' 2>&1)
+  RC=$?
+  set -e
+  echo "CV=$OUT"
+  if [ "$RC" -eq 0 ] && echo "$OUT" | grep -q '^True|'; then
+    echo CLUSTER_AVAILABLE=1
+    exit 0
+  fi
+  sleep 30
+done
+echo CLUSTER_AVAILABLE=0
+exit 1
+`, remoteRoot, img, runner)
+	out, _, err := e.inv.RunScript(j.InventoryID, waitCV)
+	if err != nil {
+		return fmt.Errorf("wait clusterversion Available: %v (%s)", err, truncate(out, 800))
+	}
+	e.log(j, StageACM, "cluster ready:\n%s", trimHostOut(out))
+	_ = e.SaveJob(j)
+
 	e.log(j, StageACM, "apply MCE subscription via EE oc (channel=%s)", mceChannel)
 	_ = e.SaveJob(j)
 
-	// Phase 1: namespace + OG + MCE subscription only (MCE CR needs CRDs from CSV).
-	phase1 := fmt.Sprintf(`set -eu
-ROOT=%q
-EE_IMAGE=%q
-KC="$ROOT/acm/kubeconfig"
-run_oc() {
-  podman run --rm \
-    -v "$ROOT/acm:/acm:Z" \
-    -e KUBECONFIG=/acm/kubeconfig \
-    --entrypoint /usr/local/bin/oc \
-    "$EE_IMAGE" "$@"
-}
-run_oc apply -f - <<'YAML'
-apiVersion: v1
+	phase1YAML := fmt.Sprintf(`apiVersion: v1
 kind: Namespace
 metadata:
   name: open-cluster-management
@@ -130,12 +179,22 @@ spec:
   name: multicluster-engine
   source: redhat-operators
   sourceNamespace: openshift-marketplace
-YAML
+`, mceChannel)
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/phase1-mce-sub.yaml", []byte(phase1YAML)); err != nil {
+		return err
+	}
+
+	phase1 := fmt.Sprintf(`set -eu
+ROOT=%q
+EE_IMAGE=%q
+%s
+prep_kc
+run_oc apply -f /acm/phase1-mce-sub.yaml
 echo MCE_SUB_APPLIED=1
 run_oc get sub -n open-cluster-management || true
-`, remoteRoot, img, mceChannel)
+`, remoteRoot, img, runner)
 
-	out, _, err := e.inv.RunScript(j.InventoryID, phase1)
+	out, _, err = e.inv.RunScript(j.InventoryID, phase1)
 	if err != nil {
 		return fmt.Errorf("ACM MCE subscription: %v (%s)", err, truncate(out, 800))
 	}
@@ -146,25 +205,23 @@ run_oc get sub -n open-cluster-management || true
 		return err
 	}
 
-	phaseMCE := fmt.Sprintf(`set -eu
-ROOT=%q
-EE_IMAGE=%q
-run_oc() {
-  podman run --rm \
-    -v "$ROOT/acm:/acm:Z" \
-    -e KUBECONFIG=/acm/kubeconfig \
-    --entrypoint /usr/local/bin/oc \
-    "$EE_IMAGE" "$@"
-}
-run_oc apply -f - <<'YAML'
-apiVersion: multicluster.openshift.io/v1
+	mceCR := `apiVersion: multicluster.openshift.io/v1
 kind: MultiClusterEngine
 metadata:
   name: multiclusterengine
 spec: {}
-YAML
+`
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/phase-mce-cr.yaml", []byte(mceCR)); err != nil {
+		return err
+	}
+	phaseMCE := fmt.Sprintf(`set -eu
+ROOT=%q
+EE_IMAGE=%q
+%s
+prep_kc
+run_oc apply -f /acm/phase-mce-cr.yaml
 echo MCE_CR_APPLIED=1
-`, remoteRoot, img)
+`, remoteRoot, img, runner)
 	out, _, err = e.inv.RunScript(j.InventoryID, phaseMCE)
 	if err != nil {
 		return fmt.Errorf("MultiClusterEngine apply: %v (%s)", err, truncate(out, 800))
@@ -172,18 +229,7 @@ echo MCE_CR_APPLIED=1
 	e.log(j, StageACM, "MCE CR:\n%s", trimHostOut(out))
 	_ = e.SaveJob(j)
 
-	phaseACMSub := fmt.Sprintf(`set -eu
-ROOT=%q
-EE_IMAGE=%q
-run_oc() {
-  podman run --rm \
-    -v "$ROOT/acm:/acm:Z" \
-    -e KUBECONFIG=/acm/kubeconfig \
-    --entrypoint /usr/local/bin/oc \
-    "$EE_IMAGE" "$@"
-}
-run_oc apply -f - <<'YAML'
-apiVersion: operators.coreos.com/v1alpha1
+	acmSub := fmt.Sprintf(`apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: advanced-cluster-management
@@ -194,9 +240,18 @@ spec:
   name: advanced-cluster-management
   source: redhat-operators
   sourceNamespace: openshift-marketplace
-YAML
+`, acmChannel)
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/phase-acm-sub.yaml", []byte(acmSub)); err != nil {
+		return err
+	}
+	phaseACMSub := fmt.Sprintf(`set -eu
+ROOT=%q
+EE_IMAGE=%q
+%s
+prep_kc
+run_oc apply -f /acm/phase-acm-sub.yaml
 echo ACM_SUB_APPLIED=1
-`, remoteRoot, img, acmChannel)
+`, remoteRoot, img, runner)
 	out, _, err = e.inv.RunScript(j.InventoryID, phaseACMSub)
 	if err != nil {
 		return fmt.Errorf("ACM subscription: %v (%s)", err, truncate(out, 800))
@@ -208,28 +263,26 @@ echo ACM_SUB_APPLIED=1
 		return err
 	}
 
-	phaseMCH := fmt.Sprintf(`set -eu
-ROOT=%q
-EE_IMAGE=%q
-run_oc() {
-  podman run --rm \
-    -v "$ROOT/acm:/acm:Z" \
-    -e KUBECONFIG=/acm/kubeconfig \
-    --entrypoint /usr/local/bin/oc \
-    "$EE_IMAGE" "$@"
-}
-run_oc apply -f - <<'YAML'
-apiVersion: operator.open-cluster-management.io/v1
+	mch := `apiVersion: operator.open-cluster-management.io/v1
 kind: MultiClusterHub
 metadata:
   name: multiclusterhub
   namespace: open-cluster-management
 spec: {}
-YAML
+`
+	if err := e.inv.WriteRemoteFile(j.InventoryID, remoteRoot+"/acm/phase-mch.yaml", []byte(mch)); err != nil {
+		return err
+	}
+	phaseMCH := fmt.Sprintf(`set -eu
+ROOT=%q
+EE_IMAGE=%q
+%s
+prep_kc
+run_oc apply -f /acm/phase-mch.yaml
 echo MCH_APPLIED=1
 run_oc get csv -n open-cluster-management || true
 run_oc get mch -n open-cluster-management || true
-`, remoteRoot, img)
+`, remoteRoot, img, runner)
 	out, _, err = e.inv.RunScript(j.InventoryID, phaseMCH)
 	if err != nil {
 		return fmt.Errorf("MultiClusterHub apply: %v (%s)", err, truncate(out, 800))
@@ -246,6 +299,8 @@ run_oc get mch -n open-cluster-management || true
 func (e *Engine) waitForCSV(j *Job, remoteRoot, nameContains, label string) error {
 	deadline := time.Now().Add(acmWaitTimeout())
 	img := EEImage()
+	hubIP := "10.77.30.20"
+	runner := ocRunnerSnippet(hubIP)
 	e.log(j, StageACM, "waiting up to %s for CSV matching %q (%s)", acmWaitTimeout(), nameContains, label)
 	_ = e.SaveJob(j)
 	var last string
@@ -254,13 +309,8 @@ func (e *Engine) waitForCSV(j *Job, remoteRoot, nameContains, label string) erro
 ROOT=%q
 EE_IMAGE=%q
 NEED=%q
-run_oc() {
-  podman run --rm \
-    -v "$ROOT/acm:/acm:Z" \
-    -e KUBECONFIG=/acm/kubeconfig \
-    --entrypoint /usr/local/bin/oc \
-    "$EE_IMAGE" "$@"
-}
+%s
+prep_kc
 echo "CSV_POLL=%d need=$NEED"
 set +e
 OUT=$(run_oc get csv -n open-cluster-management -o jsonpath='{range .items[*]}{.metadata.name}{"="}{.status.phase}{"\n"}{end}' 2>&1)
@@ -270,7 +320,7 @@ echo "$OUT"
 if [ "$RC" -eq 0 ]; then
   echo "$OUT" | grep -i "$NEED" | grep -qiE '=Succeeded|=Available' && echo CSV_OK=1 || true
 fi
-`, remoteRoot, img, nameContains, attempt)
+`, remoteRoot, img, nameContains, runner, attempt)
 		out, _, err := e.inv.RunScript(j.InventoryID, script)
 		if err != nil {
 			last = truncate(out, 600)
@@ -293,5 +343,5 @@ fi
 		}
 		time.Sleep(sleep)
 	}
-	return fmt.Errorf("ACM timed out after %s waiting for CSV %q Available/Succeeded (last: %s)", acmWaitTimeout(), nameContains, last)
+	return fmt.Errorf("CSV %q not Available/Succeeded after %s (last: %s)", nameContains, acmWaitTimeout(), last)
 }
