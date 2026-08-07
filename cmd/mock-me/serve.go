@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dasmlab/mock-me/internal/activity"
 	"github.com/dasmlab/mock-me/internal/api"
 	"github.com/dasmlab/mock-me/internal/auth"
 	"github.com/dasmlab/mock-me/internal/inventory"
@@ -56,6 +57,10 @@ LAB / TEST / DEV ONLY.`,
 			if err != nil {
 				return err
 			}
+			act, err := activity.NewStore(dataDir)
+			if err != nil {
+				return err
+			}
 
 			authCfg := auth.ConfigFromEnv()
 			authSvc, err := auth.New(context.Background(), authCfg)
@@ -76,7 +81,7 @@ LAB / TEST / DEV ONLY.`,
 				fmt.Fprintln(os.Stderr, "warning: no embedded UI (static/); API-only mode")
 			}
 
-			srv := api.New(store, inv, authSvc, dataDir, version, staticHandler)
+			srv := api.New(store, inv, act, authSvc, dataDir, version, staticHandler)
 			fmt.Fprintf(os.Stderr, "mock-me UI+API on %s (data=%s) — LAB/TEST/DEV ONLY\n", addr, dataDir)
 			return api.ListenAndServe(addr, srv.Handler())
 		},

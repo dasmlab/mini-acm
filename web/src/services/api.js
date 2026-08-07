@@ -178,6 +178,16 @@ export async function deleteInventory(id) {
   await api.delete(`/inventory/${id}`)
 }
 
+export async function postActivity(payload) {
+  const { data } = await api.post('/activity', payload)
+  return data
+}
+
+export async function listActivity({ limit = 200 } = {}) {
+  const { data } = await api.get('/activity', { params: { limit } })
+  return data
+}
+
 export async function deleteMockup(id) {
   await api.delete(`/mockups/${id}`)
 }

@@ -18,10 +18,14 @@ Same dasmlab realm pattern as interview-me.
 2. Client authentication: **ON** · Standard flow: ON
 3. Redirect URIs:
    - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
+   - `https://dev-*-mock-me.apps.2026-prod-1.ocp.dasmlab.org/api/v1/auth/callback`
    - `https://*.apps.2026-prod-1.ocp.dasmlab.org/*`
    - `http://localhost:8080/api/v1/auth/callback`
-4. Client role: `admin` — assign to staff users (Filter by clients → mock-me)
-5. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mock-me"].roles` in the access token
+4. Web origins (as needed):
+   - `https://mock-me.apps.2026-prod-1.ocp.dasmlab.org`
+   - `https://dev-*-mock-me.apps.2026-prod-1.ocp.dasmlab.org`
+5. Client role: `admin` — assign to staff users (Filter by clients → mock-me)
+6. Ensure `roles` client scope / User Client Role mapper puts `resource_access["mock-me"].roles` in the access token
 
 ## Env (serve / Deployment)
 
@@ -49,3 +53,16 @@ Store the secret in K8s as `mock-me-oidc` / key `client-secret` (do not commit).
 - Route: https://mock-me.apps.2026-prod-1.ocp.dasmlab.org (HAProxy **CERT55**)
 - Client role may be named `Admin` or `admin` (match is case-insensitive)
 - Without a session, `GET /api/v1/mockups` returns **401** when OIDC is enabled
+
+## Developer previews
+
+Per-developer sites (any non-`main` branch push):
+
+| Item | Value |
+|------|--------|
+| Host | `https://dev-{github-user}-mock-me.apps.2026-prod-1.ocp.dasmlab.org` |
+| Namespace | `mock-me-dev-{user}` |
+| Cert | `scripts/ci/ensure-preview-cert.sh` on HAProxy `10.20.1.10` (first preview only) |
+| Secrets | Copied from `mock-me-system` (`dasmlab-ghcr-pull`, `mock-me-oidc`, optional CA/ssh/pull) |
+
+See [DEVELOPER.md](./DEVELOPER.md).

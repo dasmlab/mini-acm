@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from 'src/services/auth'
+import { installActivityTracker } from 'src/lib/activityTracker'
 
 const routes = [
   {
@@ -16,6 +17,12 @@ const routes = [
       { path: 'mockups', name: 'mockups', component: () => import('src/pages/MockUpsPage.vue'), meta: { admin: true } },
       { path: 'model', name: 'model', component: () => import('src/pages/ModelPage.vue'), meta: { admin: true } },
       { path: 'inventory', name: 'inventory', component: () => import('src/pages/InventoryPage.vue'), meta: { admin: true } },
+      {
+        path: 'activity',
+        name: 'activity',
+        component: () => import('src/pages/ActivityPage.vue'),
+        meta: { admin: true, activityViewer: true },
+      },
       {
         path: 'mockups/:id/topology',
         name: 'topology',
@@ -50,7 +57,12 @@ router.beforeEach(async (to) => {
   if (to.meta.admin && !auth.isAdmin.value) {
     return { name: 'login', query: { returnTo: to.fullPath } }
   }
+  if (to.meta.activityViewer && !auth.canViewActivity.value) {
+    return { name: 'home' }
+  }
   return true
 })
+
+installActivityTracker(router)
 
 export default router

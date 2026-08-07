@@ -2,22 +2,47 @@ name: mock-me CX Pipeline
 
 on:
   push:
-    branches: ["main", "development"]
+    branches: ["**"]
   workflow_dispatch:
+    inputs:
+      fresh_preview:
+        description: "Wipe preview data PVC before deploy (branch previews only)"
+        type: boolean
+        default: false
 
 env:
   RUNNER_LABEL: self-hosted
+
+concurrency:
+  group: mock-me-${{ github.ref == 'refs/heads/main' && 'prod' || format('preview-{0}', github.actor) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   prepare:
     runs-on: [self-hosted]
     outputs:
       version_tag: ${{ steps.meta.outputs.version_tag }}
+      is_prod: ${{ steps.meta.outputs.is_prod }}
+      fresh_preview: ${{ steps.meta.outputs.fresh_preview }}
     steps:
       - uses: actions/checkout@v4
       - id: meta
         run: |
+          set -euo pipefail
           echo "version_tag=v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            echo "is_prod=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prod=false" >> "$GITHUB_OUTPUT"
+          fi
+          fresh=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.fresh_preview }}" = "true" ]; then
+            fresh=true
+          fi
+          if git log -1 --pretty=%B | grep -qi '\[fresh-preview\]'; then
+            fresh=true
+          fi
+          echo "fresh_preview=${fresh}" >> "$GITHUB_OUTPUT"
 
   build-publish:
     needs: prepare
@@ -121,8 +146,8 @@ jobs:
           docker inspect "${cid}" || true
           exit 1
 
-      - name: Ensure HAProxy CERT for FQDN
-        if: success()
+      - name: Ensure HAProxy CERT for prod FQDN
+        if: success() && needs.prepare.outputs.is_prod == 'true'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -139,7 +164,7 @@ jobs:
 
   gitops-deploy:
     needs: [prepare, build-publish]
-    if: success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    if: success() && needs.prepare.outputs.is_prod == 'true'
     runs-on: [self-hosted]
     steps:
       - uses: actions/checkout@v4
@@ -156,6 +181,11 @@ jobs:
           fi
           if [ -z "${DEPLOY_TOKEN}" ] && [ -n "${SECRET_PAT:-}" ]; then
             DEPLOY_TOKEN="${SECRET_PAT}"
+          fi
+          if [ -z "${DEPLOY_TOKEN}" ] && [ -f "/home/dasm/gh-pat" ]; then
+            # shellcheck disable=SC1091
+            source /home/dasm/gh-pat
+            DEPLOY_TOKEN="${DASMLAB_GHCR_PAT:-${GH_TOKEN:-}}"
           fi
           if [ -z "${DEPLOY_TOKEN}" ]; then
             echo "ERROR: deploy token not set"
@@ -195,3 +225,23 @@ jobs:
           fi
           git commit -m "Auto-publish mock-me ${VERSION_TAG}"
           git push
+
+  preview-deploy:
+    needs: [prepare, build-publish]
+    if: success() && needs.prepare.outputs.is_prod != 'true'
+    runs-on: [self-hosted]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy developer preview
+        env:
+          VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
+          PREVIEW_ACTOR: ${{ github.actor }}
+          PREVIEW_FRESH: ${{ needs.prepare.outputs.fresh_preview }}
+          PREVIEW_PROXY_HOST: "10.20.1.10"
+          PREVIEW_PROXY_USER: "dasm"
+          DASMLAB_GHCR_PAT: ${{ secrets.DASMLAB_GHCR_PAT }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/ensure-preview-cert.sh scripts/ci/deploy-preview.sh
+          ./scripts/ci/deploy-preview.sh

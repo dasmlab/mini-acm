@@ -22,6 +22,7 @@ import (
 const (
 	cookieState   = "mm_oauth_state"
 	cookieSession = "mm_session"
+	cookieActLogin = "mm_act_login" // set after a login activity event for this SSO session
 	stateTTL      = 10 * time.Minute
 	// Long enough for multi-hour interviews; tokens are refreshed underneath.
 	sessionCookieTTL = 24 * time.Hour
@@ -30,6 +31,16 @@ const (
 	// Browsers silently drop Set-Cookie values near/over ~4KiB.
 	maxSessionCookieBytes = 3500
 )
+
+type ctxKey int
+
+const userContextKey ctxKey = 1
+
+// UserFromContext returns the admin-authenticated user set by AdminMiddleware.
+func UserFromContext(ctx context.Context) (*User, bool) {
+	u, ok := ctx.Value(userContextKey).(*User)
+	return u, ok
+}
 
 type Config struct {
 	Issuer       string
@@ -128,6 +139,10 @@ type Service struct {
 
 	mu     sync.Mutex
 	states map[string]time.Time
+
+	// OnLogin is invoked once per SSO session after a successful login
+	// (OIDC callback and/or first /auth/me). Optional.
+	OnLogin func(user *User)
 }
 
 func New(ctx context.Context, cfg Config) (*Service, error) {
@@ -239,9 +254,14 @@ func (s *Service) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.writeSessionCookie(w, r, sessionFromToken(token, rawID)); err != nil {
+	sess := sessionFromToken(token, rawID)
+	if err := s.writeSessionCookie(w, r, sess); err != nil {
 		http.Error(w, "session encode failed", http.StatusInternalServerError)
 		return
+	}
+
+	if user, uerr := s.userFromTokens(r.Context(), sess.AccessToken, sess.IDToken); uerr == nil {
+		s.emitLoginOnce(w, r, user)
 	}
 
 	dest := s.cfg.AppPublicURL
@@ -259,6 +279,7 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.SetCookie(w, &http.Cookie{Name: cookieSession, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: cookieActLogin, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 
 	if !s.Enabled() {
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -286,7 +307,31 @@ func (s *Service) Me(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
+	// Session-start backup if callback did not emit (e.g. existing cookie / refresh).
+	s.emitLoginOnce(w, r, user)
 	writeJSON(w, http.StatusOK, user)
+}
+
+// emitLoginOnce records a login activity event at most once per SSO browser session.
+func (s *Service) emitLoginOnce(w http.ResponseWriter, r *http.Request, user *User) {
+	if s.OnLogin == nil || user == nil {
+		return
+	}
+	if c, err := r.Cookie(cookieActLogin); err == nil && c.Value == "1" {
+		return
+	}
+	s.OnLogin(user)
+	if w != nil {
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieActLogin,
+			Value:    "1",
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+			MaxAge:   int(sessionCookieTTL.Seconds()),
+		})
+	}
 }
 
 // KeepAlive refreshes the SSO session cookie (access token via refresh_token).
@@ -509,7 +554,9 @@ func (s *Service) Middleware(next http.Handler) http.Handler {
 func (s *Service) AdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.Enabled() {
-			next.ServeHTTP(w, r)
+			local := &User{PreferredUsername: "local", Name: "Local Dev", IsAdmin: true}
+			ctx := context.WithValue(r.Context(), userContextKey, local)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		user, err := s.Authenticate(w, r)
@@ -524,8 +571,74 @@ func (s *Service) AdminMiddleware(next http.Handler) http.Handler {
 			})
 			return
 		}
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// ActivityViewers returns preferred_usernames allowed to GET /activity.
+// Default: dasm. Override with ACTIVITY_VIEWERS=comma,separated,list.
+func ActivityViewers() []string {
+	raw := strings.TrimSpace(os.Getenv("ACTIVITY_VIEWERS"))
+	if raw == "" {
+		return []string{"dasm"}
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{"dasm"}
+	}
+	return out
+}
+
+// CanViewActivity reports whether preferred_username is on the activity viewer allowlist.
+// When OIDC is disabled, local/dev may view (for lab testing).
+func (s *Service) CanViewActivity(user *User) bool {
+	if user == nil {
+		return false
+	}
+	if !s.Enabled() {
+		return true
+	}
+	uname := strings.TrimSpace(user.PreferredUsername)
+	for _, v := range ActivityViewers() {
+		if uname == v {
+			return true
+		}
+	}
+	return false
+}
+
+// ActivityViewMiddleware requires admin + activity viewer allowlist (dasm by default).
+func (s *Service) ActivityViewMiddleware(next http.Handler) http.Handler {
+	return s.AdminMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.activityViewerGate(w, r, next)
+	}))
+}
+
+// ActivityViewerGate is for use inside AdminMiddleware: forbid unless viewer allowlist.
+func (s *Service) ActivityViewerGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.activityViewerGate(w, r, next)
+	})
+}
+
+func (s *Service) activityViewerGate(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	user, ok := UserFromContext(r.Context())
+	if !ok || !s.CanViewActivity(user) {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":  "forbidden",
+			"detail": "activity log is restricted",
+		})
+		return
+	}
+	next.ServeHTTP(w, r)
 }
 
 // IsAdmin reports whether the request has the mock-me "admin" client role.
