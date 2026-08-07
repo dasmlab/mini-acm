@@ -4,7 +4,11 @@
       <div>
         <p class="page-kicker">Internal</p>
         <h1 class="page-title">Activity</h1>
-        <p class="page-lead">Login and navigation events for authenticated users (newest first).</p>
+        <p class="page-lead">
+          Login and navigation events for authenticated users (newest first).
+          Stored on the app data volume (<code>DATA_DIR/activity/events.jsonl</code>) so it survives image rollouts.
+        </p>
+        <p v-if="events.length" class="page-meta">{{ events.length }} recent event<span v-if="events.length !== 1">s</span> loaded</p>
       </div>
       <div class="head-actions">
         <q-select
@@ -148,6 +152,14 @@ onUnmounted(() => {
   margin: 0;
   color: #546e7a;
   max-width: 36rem;
+}
+.page-lead code {
+  font-size: 0.85em;
+}
+.page-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: #90a4ae;
 }
 .head-actions {
   display: flex;
