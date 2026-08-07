@@ -68,6 +68,11 @@ Identity is stamped server-side from the SSO session (`preferred_username` /
 `sub` / `email`); clients cannot spoof another user. `GET /api/v1/activity` is
 restricted to viewers in `ACTIVITY_VIEWERS` (default: `dasm`).
 
+Persistence: events append to `DATA_DIR/activity/events.jsonl`. In OpenShift that
+is the existing `mock-me-data` PVC mounted at `/data`, so **image rollouts keep
+the log** (same volume as MockUps / inventory). Preview namespaces have their
+**own** PVC — history does not copy from preview → prod.
+
 This is a **lab experiment**, not a full analytics product: no heatmaps, no
 session replay, no third-party SDK, last-N JSONL only.
 
