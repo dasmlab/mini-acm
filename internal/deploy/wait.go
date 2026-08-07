@@ -87,9 +87,14 @@ fi
 # prior run can flip too early and boot a half-written disk / re-enter ISO.
 # Note: virsh dumpxml (live) may still show old boot order; --inactive is authoritative.
 if [ ! -f /tmp/mock-me-hub-boot-hd.done ]; then
-  WRITE_PCT=$(echo "$WAIT_OUT" | sed -n 's/.*Writing image to disk: \([0-9][0-9]*\)%%.*/\1/p' | tail -n 1)
-  echo "WRITE_PCT=${WRITE_PCT:-0}"
-  if [ "${WRITE_PCT:-0}" -ge 90 ] 2>/dev/null; then
+  PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
+    "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
+  # Prefer the last Writing image line from this poll only (wait-for replays history).
+  WRITE_PCT=$(echo "$WAIT_OUT" | grep 'Writing image to disk:' | tail -n 1 | sed -n 's/.*Writing image to disk: \([0-9][0-9]*\)%%.*/\1/p')
+  echo "DISK_PARTS=$PARTS WRITE_PCT=${WRITE_PCT:-0}"
+  # Require both: real partitions on the disk AND write nearly complete.
+  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null && [ "${WRITE_PCT:-0}" -ge 90 ] 2>/dev/null; then
     python3 - <<'PY' || true
 import subprocess, re
 xml = subprocess.check_output(["virsh", "dumpxml", "--inactive", "hub-sno"], text=True)
