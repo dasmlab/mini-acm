@@ -305,9 +305,17 @@ func teardownPriorLabE2E(mockups *mockup.Store, inv *inventory.Store, eng *deplo
 		}
 		_ = mockups.Delete(m.Metadata.ID)
 	}
-	// Sweep orphan lab-e2e work dirs left after MockUp delete.
+	// Sweep orphan lab-e2e work dirs + force-remove hub volume so BIP never
+	// sees leftover partitions from a prior half-install.
 	script := `set -eu
 export LIBVIRT_DEFAULT_URI="${LIBVIRT_DEFAULT_URI:-qemu:///system}"
+for name in hub-sno; do
+  virsh destroy "$name" 2>/dev/null || true
+  virsh undefine "$name" --remove-all-storage 2>/dev/null || virsh undefine "$name" 2>/dev/null || true
+  virsh vol-delete --pool mock-me "${name}.qcow2" 2>/dev/null || true
+  rm -f /vm-disks/mock-me/images/${name}.qcow2 /vm-disks/mock-me/images/${name}-agent.iso 2>/dev/null || true
+done
+rm -f /tmp/mock-me-hub-boot-hd.done
 for d in /vm-disks/mock-me/work/lab-e2e /vm-disks/mock-me/work/lab-e2e-*; do
   [ -e "$d" ] || continue
   rm -rf "$d"

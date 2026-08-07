@@ -42,6 +42,8 @@ func (e *Engine) waitForHubInstall(j *Job, remoteRoot, hubName, hubIP, apiHost, 
 	e.log(j, StageOCP, "waiting up to %s for agent install-complete / kubeconfig (hub=%s api=%s)", ocpWaitTimeout(), hubName, apiHost)
 	e.log(j, StageOCP, "console: virsh --connect qemu:///system console %s", hubName)
 	_ = e.SaveJob(j)
+	// Clear prior-run boot-flip marker so a leftover flag cannot skip the flip.
+	_, _, _ = e.inv.RunScript(j.InventoryID, "rm -f /tmp/mock-me-hub-boot-hd.done; echo BOOT_FLIP_RESET=1")
 
 	var last string
 	for attempt := 1; time.Now().Before(deadline); attempt++ {
@@ -80,18 +82,14 @@ echo "$WAIT_OUT" | tail -n 25
 if [ "$WAIT_RC" -eq 0 ]; then
   echo "INSTALL_COMPLETE=1"
 fi
-# BIP reboot must land on HD: after image write creates partitions, flip boot and
-# eject ISO *while still on live agent*. Waiting until root leaves squashfs is too
-# late — cdrom boot re-runs --format-disk and loops the install.
+# BIP reboot must land on HD. Flip only once image write is nearly done
+# (WRITE_PCT>=90). Do NOT key off partitions alone — a leftover qcow from a
+# prior run can flip too early and boot a half-written disk / re-enter ISO.
 # Note: virsh dumpxml (live) may still show old boot order; --inactive is authoritative.
-if [ ! -f /tmp/mock-me-hub-boot-hd.done ] && [ -f "$ROOT/hub/id_install" ]; then
-  PARTS=$(ssh -i "$ROOT/hub/id_install" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o BatchMode=yes -o ConnectTimeout=5 "core@${HUB_IP}" \
-    "lsblk -n -o TYPE | grep -c part || true" 2>/dev/null || echo 0)
-  echo "DISK_PARTS=$PARTS"
+if [ ! -f /tmp/mock-me-hub-boot-hd.done ]; then
   WRITE_PCT=$(echo "$WAIT_OUT" | sed -n 's/.*Writing image to disk: \([0-9][0-9]*\)%%.*/\1/p' | tail -n 1)
   echo "WRITE_PCT=${WRITE_PCT:-0}"
-  if [ "${PARTS:-0}" -gt 0 ] 2>/dev/null || [ "${WRITE_PCT:-0}" -ge 90 ] 2>/dev/null; then
+  if [ "${WRITE_PCT:-0}" -ge 90 ] 2>/dev/null; then
     python3 - <<'PY' || true
 import subprocess, re
 xml = subprocess.check_output(["virsh", "dumpxml", "--inactive", "hub-sno"], text=True)
