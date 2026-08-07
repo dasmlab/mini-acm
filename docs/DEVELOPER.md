@@ -8,7 +8,7 @@ This doc is the etiquette and flow for multi-developer work without stepping on 
 | Track | What it is | URL |
 |-------|------------|-----|
 | **Production** | `main` → GHCR → GitOps (`dasmlab-live-cicd`) → Argo → `mock-me-system` | https://mock-me.apps.2026-prod-1.ocp.dasmlab.org |
-| **Your preview** | Any other branch you push → image build → **your** OpenShift namespace | https://dev-**{you}**-mock-me.apps.2026-prod-1.ocp.dasmlab.org |
+| **Your preview** | Any other branch you push → image build → GitOps `previews/{you}.yaml` → Argo → **your** NS | https://dev-**{you}**-mock-me.apps.2026-prod-1.ocp.dasmlab.org |
 
 You develop on a branch preview. When it is good, open a **PR to `main`**.
 Merging to `main` is the only path that updates production.

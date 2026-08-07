@@ -233,15 +233,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
       - name: Deploy developer preview
         env:
           VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
           PREVIEW_ACTOR: ${{ github.actor }}
           PREVIEW_FRESH: ${{ needs.prepare.outputs.fresh_preview }}
+          PREVIEW_PROXY_SSH_KEY: ${{ secrets.PREVIEW_PROXY_SSH_KEY }}
           PREVIEW_PROXY_HOST: "10.20.1.10"
           PREVIEW_PROXY_USER: "dasm"
           DASMLAB_GHCR_PAT: ${{ secrets.DASMLAB_GHCR_PAT }}
         run: |
           set -euo pipefail
-          chmod +x scripts/ci/ensure-preview-cert.sh scripts/ci/deploy-preview.sh
+          if [ -z "${PREVIEW_PROXY_SSH_KEY}" ]; then
+            echo "ERROR: secret PREVIEW_PROXY_SSH_KEY is not set"
+            exit 1
+          fi
+          if [ -f /home/dasm/gh_token ]; then
+            :
+          elif [ -z "${DASMLAB_GHCR_PAT}" ] && [ -f /home/dasm/gh-pat ]; then
+            # shellcheck disable=SC1091
+            source /home/dasm/gh-pat
+            export DASMLAB_GHCR_PAT
+          fi
+          chmod +x scripts/ci/*.sh
           ./scripts/ci/deploy-preview.sh
